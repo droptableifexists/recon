@@ -52,7 +52,7 @@ func main() {
 	var schemaBaselineJSON []DatabaseSchema
 	json.Unmarshal([]byte(schemaBaseline), &schemaBaselineJSON)
 	schemaDiff := CompareSchema(databaseSchema, schemaBaselineJSON)
-	schemaDiffJSON, _ := json.MarshalIndent(schemaDiff, "", "  ")
+	schemaDiffJSON, _ := json.Marshal(schemaDiff)
 
 	// Write to GITHUB_OUTPUT
 	outputPath := os.Getenv("GITHUB_OUTPUT")
