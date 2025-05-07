@@ -155,6 +155,10 @@ func getTables(connectionString string, database string) (map[string]TableSchema
 			if err != nil {
 				return nil, err
 			}
+			t.Constraints, err = getConstraints(db, schema, name)
+			if err != nil {
+				return nil, err
+			}
 			tableSchemas[name] = t
 		}
 	}
@@ -184,6 +188,35 @@ func getIndexes(db *sql.DB, schema string, table string) ([]IndexSchema, error) 
 		})
 	}
 	return indexes, nil
+}
+
+func getConstraints(db *sql.DB, schema string, table string) ([]ConstraintSchema, error) {
+	rows, err := db.Query(`SELECT
+		conname, contype, conkey
+	FROM
+		pg_constraint
+	WHERE
+		tablename = $1 AND schemaname = $2`, table, schema)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	constraints := []ConstraintSchema{}
+	for rows.Next() {
+		var name string
+		var constraintType string
+		var columns string
+		if err := rows.Scan(&name, &constraintType, &columns); err != nil {
+			return nil, err
+		}
+		constraints = append(constraints, ConstraintSchema{
+			Name:    name,
+			Type:    constraintType,
+			Columns: strings.Split(columns, ", "),
+		})
+	}
+	return constraints, nil
 }
 
 func CompareSchema(current, baseline []DatabaseSchema) SchemaDiff {
