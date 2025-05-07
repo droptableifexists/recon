@@ -140,6 +140,8 @@ func getArtifactFromMain(name string) string {
 
 	fmt.Print("resp.Body:")
 	fmt.Print(resp.Body)
+	fmt.Print("status:")
+	fmt.Print(resp.Status)
 
 	type Artifact struct {
 		Name        string `json:"name"`
