@@ -76,7 +76,7 @@ func main() {
 	fmt.Print(string(body))
 
 	// Generate JSON diff
-	queryDiff := generateQueryDiff(string(body), queriesBaseline)
+	queryDiff := diffQueries(string(body), queriesBaseline)
 
 	// Generate schema SQL
 	connStr := "host=postgres port=5432 user=postgres password=postgres dbname=postgres sslmode=disable"
@@ -92,7 +92,7 @@ func main() {
 	fmt.Print(schemaBaseline)
 	fmt.Print("current:")
 	fmt.Print(string(schemaJSON))
-	schemaDiff := generateSchemaDiff(string(schemaJSON), schemaBaseline)
+	schemaDiff := diffSchema(string(schemaJSON), schemaBaseline)
 
 	// Write to GITHUB_OUTPUT
 	outputPath := os.Getenv("GITHUB_OUTPUT")
@@ -235,19 +235,20 @@ func getArtifactFromMain(name string) string {
 	return ""
 }
 
-// Compute diff: return queries that exist in current but not in baseline
-func generateQueryDiff(currentStr string, baselineStr string) string {
-	var current, baseline []Query
-	json.Unmarshal([]byte(currentStr), &current)
-	json.Unmarshal([]byte(baselineStr), &baseline)
+func diffQueries(current, baseline string) string {
+	var currentQueries, baselineQueries []Query
+	json.Unmarshal([]byte(current), &currentQueries)
+	json.Unmarshal([]byte(baseline), &baselineQueries)
 
-	baselineMap := map[string]bool{}
-	for _, q := range baseline {
+	// Create a map of baseline queries for quick lookup
+	baselineMap := make(map[string]bool)
+	for _, q := range baselineQueries {
 		baselineMap[q.Query] = true
 	}
 
+	// Find new queries
 	var newQueries []Query
-	for _, q := range current {
+	for _, q := range currentQueries {
 		if !baselineMap[q.Query] {
 			newQueries = append(newQueries, q)
 		}
@@ -257,10 +258,10 @@ func generateQueryDiff(currentStr string, baselineStr string) string {
 	return string(diffBytes)
 }
 
-func generateSchemaDiff(currentStr string, baselineStr string) string {
-	var current, baseline []DatabaseSchema
-	json.Unmarshal([]byte(currentStr), &current)
-	json.Unmarshal([]byte(baselineStr), &baseline)
+func diffSchema(current, baseline string) string {
+	var currentSchema, baselineSchema []DatabaseSchema
+	json.Unmarshal([]byte(current), &currentSchema)
+	json.Unmarshal([]byte(baseline), &baselineSchema)
 
 	diff := SchemaDiff{
 		ModifiedTables: make(map[string]map[string]TableDiff),
@@ -270,10 +271,10 @@ func generateSchemaDiff(currentStr string, baselineStr string) string {
 	baselineDBs := make(map[string]DatabaseSchema)
 	currentDBs := make(map[string]DatabaseSchema)
 
-	for _, db := range baseline {
+	for _, db := range baselineSchema {
 		baselineDBs[db.Database] = db
 	}
-	for _, db := range current {
+	for _, db := range currentSchema {
 		currentDBs[db.Database] = db
 	}
 
@@ -331,28 +332,10 @@ func generateSchemaDiff(currentStr string, baselineStr string) string {
 				baselineColumns[col.Name] = col
 			}
 
-			for colName, currentCol := range currentColumns {
-				if baselineCol, exists := baselineColumns[colName]; !exists {
+			// Find new columns
+			for colName := range currentColumns {
+				if _, exists := baselineColumns[colName]; !exists {
 					tableDiff.Columns[colName] = ColumnDiff{Added: true}
-				} else {
-					// Check for column modifications
-					colDiff := ColumnDiff{}
-					if currentCol.Type != baselineCol.Type {
-						colDiff.TypeChanged = currentCol.Type
-					}
-					if currentCol.Nullable != baselineCol.Nullable {
-						colDiff.NullChanged = true
-					}
-					if colDiff.TypeChanged != "" || colDiff.NullChanged {
-						tableDiff.Columns[colName] = colDiff
-					}
-				}
-			}
-
-			// Check for removed columns
-			for colName := range baselineColumns {
-				if _, exists := currentColumns[colName]; !exists {
-					tableDiff.Columns[colName] = ColumnDiff{Removed: true}
 				}
 			}
 
@@ -367,62 +350,16 @@ func generateSchemaDiff(currentStr string, baselineStr string) string {
 				baselineIndexDefs[idx.Definition] = true
 			}
 
-			// Find changed indexes
+			// Find new indexes
 			for _, idx := range currentTable.Indexes {
 				if !baselineIndexDefs[idx.Definition] {
 					tableDiff.Indexes = append(tableDiff.Indexes, IndexDiff{New: idx.Definition})
 				}
 			}
-			for _, idx := range baselineTable.Indexes {
-				if !currentIndexDefs[idx.Definition] {
-					tableDiff.Indexes = append(tableDiff.Indexes, IndexDiff{Old: idx.Definition})
-				}
-			}
-
-			// Compare constraints
-			currentConstraints := make(map[string]ConstraintSchema)
-			baselineConstraints := make(map[string]ConstraintSchema)
-
-			for _, cons := range currentTable.Constraints {
-				currentConstraints[cons.Name] = cons
-			}
-			for _, cons := range baselineTable.Constraints {
-				baselineConstraints[cons.Name] = cons
-			}
-
-			// Find added/removed/modified constraints
-			for name, cons := range currentConstraints {
-				if _, exists := baselineConstraints[name]; !exists {
-					tableDiff.Constraints = append(tableDiff.Constraints, ConstraintDiff{
-						Name:    name,
-						Added:   true,
-						Type:    cons.Type,
-						Columns: cons.Columns,
-					})
-				}
-			}
-			for name, cons := range baselineConstraints {
-				if _, exists := currentConstraints[name]; !exists {
-					tableDiff.Constraints = append(tableDiff.Constraints, ConstraintDiff{
-						Name:    name,
-						Removed: true,
-						Type:    cons.Type,
-						Columns: cons.Columns,
-					})
-				}
-			}
 
 			// Only add table diff if there are actual changes
-			if len(tableDiff.Columns) > 0 || len(tableDiff.Indexes) > 0 ||
-				len(tableDiff.Constraints) > 0 || tableDiff.SchemaChange != "" {
+			if len(tableDiff.Columns) > 0 || len(tableDiff.Indexes) > 0 || tableDiff.SchemaChange != "" {
 				tableDiffs[tableName] = tableDiff
-			}
-		}
-
-		// Check for removed tables
-		for tableName := range baselineDB.Tables {
-			if _, exists := currentDB.Tables[tableName]; !exists {
-				tableDiffs[tableName] = TableDiff{Removed: true}
 			}
 		}
 
