@@ -70,10 +70,6 @@ func main() {
 
 	// Fetch baseline artifact queries (optional)
 	queriesBaseline := getArtifactFromMain("queries")
-	fmt.Print("queriesBaseline:")
-	fmt.Print(queriesBaseline)
-	fmt.Print("current:")
-	fmt.Print(string(body))
 
 	// Generate JSON diff
 	queryDiff := diffQueries(string(body), queriesBaseline)
@@ -88,10 +84,6 @@ func main() {
 	}
 
 	schemaBaseline := getArtifactFromMain("full-schema")
-	fmt.Print("schemaBaseline:")
-	fmt.Print(schemaBaseline)
-	fmt.Print("current:")
-	fmt.Print(string(schemaJSON))
 	schemaDiff := diffSchema(string(schemaJSON), schemaBaseline)
 
 	// Write to GITHUB_OUTPUT
