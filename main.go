@@ -169,7 +169,8 @@ func getArtifactFromMain(name string) string {
 			candidates = append(candidates, a)
 		}
 	}
-
+	fmt.Print("name:")
+	fmt.Print(name)
 	if len(candidates) == 0 {
 		fmt.Fprintf(os.Stderr, "Warning: No suitable baseline artifact from main branch found\n")
 		return ""
