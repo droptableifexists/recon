@@ -138,6 +138,11 @@ func getArtifactFromMain(name string) string {
 	}
 	defer resp.Body.Close()
 
+	fmt.Print("resp.Body:")
+	fmt.Print(resp.Body)
+	fmt.Print("status:")
+	fmt.Print(resp.Status)
+
 	type Artifact struct {
 		Name        string `json:"name"`
 		ArchiveURL  string `json:"archive_download_url"`
@@ -158,11 +163,14 @@ func getArtifactFromMain(name string) string {
 
 	var candidates []Artifact
 	for _, a := range artifactsResp.Artifacts {
+		fmt.Print("a:")
+		fmt.Print(a.Name)
 		if a.WorkflowRun.HeadBranch == "main" && strings.Contains(strings.ToLower(a.Name), name) {
 			candidates = append(candidates, a)
 		}
 	}
-
+	fmt.Print("name:")
+	fmt.Print(name)
 	if len(candidates) == 0 {
 		fmt.Fprintf(os.Stderr, "Warning: No suitable baseline artifact from main branch found\n")
 		return ""
