@@ -1,0 +1,10 @@
+name: "Watch SQL Queries"
+description: "This action watches traffic to the database to record what SQL queries are executed."
+outputs:
+  sql-queries:
+    description: "A list of all the sql queries executed."
+  diff:
+    description: "A diff of SQL executed"
+runs:
+  using: "docker"
+  image: "Dockerfile"
