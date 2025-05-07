@@ -93,7 +93,7 @@ jobs:
 
       - name: Save schema to file
         run: |
-          cat <<EOF > schema.json
+          cat <<EOF > full-schema.json
           ${{ steps.get-sql-data.outputs.schema }}
           EOF
 

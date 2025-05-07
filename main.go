@@ -87,7 +87,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	schemaBaseline := getArtifactFromMain("schema")
+	schemaBaseline := getArtifactFromMain("full-schema")
 	fmt.Print("schemaBaseline:")
 	fmt.Print(schemaBaseline)
 	fmt.Print("current:")
