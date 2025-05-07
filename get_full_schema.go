@@ -186,7 +186,7 @@ func getIndexes(db *sql.DB, schema string, table string) ([]IndexSchema, error) 
 
 func getConstraints(db *sql.DB, schema string, table string) ([]ConstraintSchema, error) {
 	rows, err := db.Query(`SELECT
-		pg_get_constraintdef(conoid) AS constraint_definition
+		pg_get_constraintdef(oid) AS constraint_definition
 	FROM
 		pg_constraint
 	WHERE
