@@ -84,6 +84,8 @@ func main() {
 	}
 
 	schemaBaseline := getArtifactFromMain("full-schema")
+	fmt.Print("schemaBaseline:")
+	fmt.Print(schemaBaseline)
 	schemaDiff := diffSchema(string(schemaJSON), schemaBaseline)
 
 	// Write to GITHUB_OUTPUT
