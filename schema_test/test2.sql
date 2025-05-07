@@ -14,4 +14,5 @@ CREATE TABLE testschema.test3 (
     name VARCHAR(255) NOT NULL
 );
 
+Create index on testschema.test (name);
 
