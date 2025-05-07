@@ -118,7 +118,7 @@ jobs:
       - name: Upload SQL Schema Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: sql-schema
+          name: full-schema
           path: full-schema.json
 
       - name: Upload SQL Schema Diff Artifact
