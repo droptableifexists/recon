@@ -39,14 +39,18 @@ type ConstraintSchema struct {
 }
 
 type SchemaDiff struct {
-	Changes []SchemaChange `json:"changes"`
+	Changes []TableChanges `json:"changes"`
+}
+
+type TableChanges struct {
+	Database string         `json:"database"`
+	Schema   string         `json:"schema"`
+	Table    string         `json:"table"`
+	Changes  []SchemaChange `json:"changes"`
 }
 
 type SchemaChange struct {
-	Database string `json:"database"`
-	Schema   string `json:"schema"`
-	Table    string `json:"table"`
-	Type     string `json:"type"` // "column_added", "column_removed", "column_modified", "index_added", "index_removed", "constraint_added", "constraint_removed", "table_added", "table_removed"
+	Type     string `json:"type"` // "column_added", "column_removed", "column_modified", "index_added", "index_removed", "constraint_added", "constraint_removed"
 	Name     string `json:"name"`
 	OldValue string `json:"old_value,omitempty"`
 	NewValue string `json:"new_value,omitempty"`
@@ -185,7 +189,7 @@ func getIndexes(db *sql.DB, schema string, table string) ([]IndexSchema, error) 
 }
 
 func CompareSchema(current, baseline []DatabaseSchema) SchemaDiff {
-	var changes []SchemaChange
+	var tableChanges []TableChanges
 	old := getDatabaseSchemaMap(baseline)
 	new := getDatabaseSchemaMap(current)
 
@@ -202,15 +206,22 @@ func CompareSchema(current, baseline []DatabaseSchema) SchemaDiff {
 
 			if !tableExists {
 				// New table
-				changes = append(changes, SchemaChange{
+				tableChanges = append(tableChanges, TableChanges{
 					Database: dbName,
 					Schema:   currentTable.Schema,
 					Table:    tableName,
-					Type:     "table_added",
-					Name:     tableName,
+					Changes: []SchemaChange{
+						{
+							Type: "table_added",
+							Name: tableName,
+						},
+					},
 				})
 				continue
 			}
+
+			// Compare existing table
+			var changes []SchemaChange
 
 			// Compare columns
 			currentColumns := make(map[string]ColumnSchema)
@@ -227,9 +238,6 @@ func CompareSchema(current, baseline []DatabaseSchema) SchemaDiff {
 			for colName, currentCol := range currentColumns {
 				if baselineCol, exists := baselineColumns[colName]; !exists {
 					changes = append(changes, SchemaChange{
-						Database: dbName,
-						Schema:   currentTable.Schema,
-						Table:    tableName,
 						Type:     "column_added",
 						Name:     colName,
 						NewValue: fmt.Sprintf("%s %s", currentCol.Type, map[bool]string{true: "NULL", false: "NOT NULL"}[currentCol.Nullable]),
@@ -238,9 +246,6 @@ func CompareSchema(current, baseline []DatabaseSchema) SchemaDiff {
 					// Check for column modifications
 					if currentCol.Type != baselineCol.Type {
 						changes = append(changes, SchemaChange{
-							Database: dbName,
-							Schema:   currentTable.Schema,
-							Table:    tableName,
 							Type:     "column_modified",
 							Name:     colName,
 							OldValue: baselineCol.Type,
@@ -250,9 +255,6 @@ func CompareSchema(current, baseline []DatabaseSchema) SchemaDiff {
 					}
 					if currentCol.Nullable != baselineCol.Nullable {
 						changes = append(changes, SchemaChange{
-							Database: dbName,
-							Schema:   currentTable.Schema,
-							Table:    tableName,
 							Type:     "column_modified",
 							Name:     colName,
 							OldValue: map[bool]string{true: "NULL", false: "NOT NULL"}[baselineCol.Nullable],
@@ -267,9 +269,6 @@ func CompareSchema(current, baseline []DatabaseSchema) SchemaDiff {
 			for colName := range baselineColumns {
 				if _, exists := currentColumns[colName]; !exists {
 					changes = append(changes, SchemaChange{
-						Database: dbName,
-						Schema:   currentTable.Schema,
-						Table:    tableName,
 						Type:     "column_removed",
 						Name:     colName,
 						OldValue: fmt.Sprintf("%s %s", baselineColumns[colName].Type, map[bool]string{true: "NULL", false: "NOT NULL"}[baselineColumns[colName].Nullable]),
@@ -292,9 +291,6 @@ func CompareSchema(current, baseline []DatabaseSchema) SchemaDiff {
 			for _, idx := range currentTable.Indexes {
 				if !baselineIndexDefs[idx.Definition] {
 					changes = append(changes, SchemaChange{
-						Database: dbName,
-						Schema:   currentTable.Schema,
-						Table:    tableName,
 						Type:     "index_added",
 						Name:     extractIndexName(idx.Definition),
 						NewValue: idx.Definition,
@@ -304,9 +300,6 @@ func CompareSchema(current, baseline []DatabaseSchema) SchemaDiff {
 			for _, idx := range baselineTable.Indexes {
 				if !currentIndexDefs[idx.Definition] {
 					changes = append(changes, SchemaChange{
-						Database: dbName,
-						Schema:   currentTable.Schema,
-						Table:    tableName,
 						Type:     "index_removed",
 						Name:     extractIndexName(idx.Definition),
 						OldValue: idx.Definition,
@@ -332,9 +325,6 @@ func CompareSchema(current, baseline []DatabaseSchema) SchemaDiff {
 				def := fmt.Sprintf("%s %s (%s)", c.Name, c.Type, strings.Join(c.Columns, ", "))
 				if !baselineConstraintDefs[def] {
 					changes = append(changes, SchemaChange{
-						Database: dbName,
-						Schema:   currentTable.Schema,
-						Table:    tableName,
 						Type:     "constraint_added",
 						Name:     c.Name,
 						NewValue: def,
@@ -345,32 +335,42 @@ func CompareSchema(current, baseline []DatabaseSchema) SchemaDiff {
 				def := fmt.Sprintf("%s %s (%s)", c.Name, c.Type, strings.Join(c.Columns, ", "))
 				if !currentConstraintDefs[def] {
 					changes = append(changes, SchemaChange{
-						Database: dbName,
-						Schema:   currentTable.Schema,
-						Table:    tableName,
 						Type:     "constraint_removed",
 						Name:     c.Name,
 						OldValue: def,
 					})
 				}
 			}
+
+			if len(changes) > 0 {
+				tableChanges = append(tableChanges, TableChanges{
+					Database: dbName,
+					Schema:   currentTable.Schema,
+					Table:    tableName,
+					Changes:  changes,
+				})
+			}
 		}
 
 		// Check for removed tables
 		for tableName := range baselineDB.Tables {
 			if _, exists := currentDB.Tables[tableName]; !exists {
-				changes = append(changes, SchemaChange{
+				tableChanges = append(tableChanges, TableChanges{
 					Database: dbName,
 					Schema:   baselineDB.Tables[tableName].Schema,
 					Table:    tableName,
-					Type:     "table_removed",
-					Name:     tableName,
+					Changes: []SchemaChange{
+						{
+							Type: "table_removed",
+							Name: tableName,
+						},
+					},
 				})
 			}
 		}
 	}
 
-	return SchemaDiff{Changes: changes}
+	return SchemaDiff{Changes: tableChanges}
 }
 
 func extractIndexName(definition string) string {
