@@ -99,7 +99,7 @@ jobs:
 
       - name: Save schema diff to file
         run: |
-          cat <<EOF > schema-diff.txt
+          cat <<EOF > schema-diff.json
           ${{ steps.get-sql-data.outputs.schema-diff }}
           EOF
 
@@ -125,4 +125,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: schema-diff
-          path: schema-diff.txt
+          path: schema-diff.json
