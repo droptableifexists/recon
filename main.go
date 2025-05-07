@@ -164,7 +164,7 @@ func getArtifactFromMain(name string) string {
 	var candidates []Artifact
 	for _, a := range artifactsResp.Artifacts {
 		fmt.Print("a:")
-		fmt.Print(a)
+		fmt.Print(a.Name)
 		if a.WorkflowRun.HeadBranch == "main" && strings.Contains(strings.ToLower(a.Name), name) {
 			candidates = append(candidates, a)
 		}
