@@ -11,47 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
 	_ "github.com/lib/pq"
 )
 
 type Query struct {
 	Query string `json:"Query"`
-}
-
-type SchemaDiff struct {
-	AddedDatabases   []string                        `json:"added_databases,omitempty"`
-	RemovedDatabases []string                        `json:"removed_databases,omitempty"`
-	ModifiedTables   map[string]map[string]TableDiff `json:"modified_tables,omitempty"`
-}
-
-type TableDiff struct {
-	Added        bool                  `json:"added,omitempty"`
-	Removed      bool                  `json:"removed,omitempty"`
-	SchemaChange string                `json:"schema_change,omitempty"`
-	Columns      map[string]ColumnDiff `json:"columns,omitempty"`
-	Indexes      []IndexDiff           `json:"indexes,omitempty"`
-	Constraints  []ConstraintDiff      `json:"constraints,omitempty"`
-}
-
-type ColumnDiff struct {
-	Added       bool   `json:"added,omitempty"`
-	Removed     bool   `json:"removed,omitempty"`
-	TypeChanged string `json:"type_changed,omitempty"`
-	NullChanged bool   `json:"null_changed,omitempty"`
-}
-
-type IndexDiff struct {
-	Old string `json:"old,omitempty"`
-	New string `json:"new,omitempty"`
-}
-
-type ConstraintDiff struct {
-	Name    string   `json:"name"`
-	Added   bool     `json:"added,omitempty"`
-	Removed bool     `json:"removed,omitempty"`
-	Type    string   `json:"type,omitempty"`
-	Columns []string `json:"columns,omitempty"`
 }
 
 func main() {
@@ -87,7 +51,8 @@ func main() {
 	schemaBaseline := getArtifactFromMain("full-schema")
 	var schemaBaselineJSON []DatabaseSchema
 	json.Unmarshal([]byte(schemaBaseline), &schemaBaselineJSON)
-	schemaDiff := cmp.Diff(databaseSchema, schemaBaselineJSON)
+	schemaDiff := CompareSchema(databaseSchema, schemaBaselineJSON)
+	schemaDiffJSON, _ := json.MarshalIndent(schemaDiff, "", "  ")
 
 	// Write to GITHUB_OUTPUT
 	outputPath := os.Getenv("GITHUB_OUTPUT")
@@ -102,7 +67,7 @@ func main() {
 		escapeMultiline(string(body)),
 		escapeMultiline(queryDiff),
 		escapeMultiline(string(schemaJSON)),
-		schemaDiff)
+		escapeMultiline(string(schemaDiffJSON)))
 	if err := os.WriteFile(outputPath, []byte(output), 0644); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to write GITHUB_OUTPUT: %v\n", err)
 		os.Exit(1)
