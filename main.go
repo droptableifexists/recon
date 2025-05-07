@@ -102,7 +102,7 @@ func main() {
 		escapeMultiline(string(body)),
 		escapeMultiline(queryDiff),
 		escapeMultiline(string(schemaJSON)),
-		escapeMultiline(schemaDiff))
+		schemaDiff)
 	if err := os.WriteFile(outputPath, []byte(output), 0644); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to write GITHUB_OUTPUT: %v\n", err)
 		os.Exit(1)
