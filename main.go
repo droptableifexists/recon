@@ -138,6 +138,9 @@ func getArtifactFromMain(name string) string {
 	}
 	defer resp.Body.Close()
 
+	fmt.Print("resp.Body:")
+	fmt.Print(resp.Body)
+
 	type Artifact struct {
 		Name        string `json:"name"`
 		ArchiveURL  string `json:"archive_download_url"`
