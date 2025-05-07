@@ -1,0 +1,128 @@
+name: Build and Test
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write  # Required to push to GHCR
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push Docker image
+        run: |
+          IMAGE_NAME=ghcr.io/${{ github.repository_owner }}/sql-proxy:latest
+          docker build -t $IMAGE_NAME ./sql-proxy
+          docker push $IMAGE_NAME
+
+  test:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    permissions:
+      contents: read
+      actions: read  # <-- Needed for getArtifactFromMain() to list artifacts
+
+    services:
+      postgres:
+        image: postgres
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      proxy:
+        image: ghcr.io/${{ github.repository_owner }}/sql-proxy:latest
+        ports:
+          - 5433:5433
+          - 8080:8080
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Migrate Database
+        run: |
+          cd schema_test
+          go run .
+
+      - name: Run Tests
+        run: |
+          cd tests
+          go run .
+
+      - name: Get SQL data
+        uses: ./
+        id: get-sql-data
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Save queries to file
+        run: |
+          cat <<EOF > queries.json
+          ${{ steps.get-sql-data.outputs.sql-queries }}
+          EOF
+
+      - name: Save diff to file
+        run: |
+          cat <<EOF > diff.json
+          ${{ steps.get-sql-data.outputs.diff }}
+          EOF
+
+      - name: Save schema to file
+        run: |
+          cat <<EOF > schema.json
+          ${{ steps.get-sql-data.outputs.schema }}
+          EOF
+
+      - name: Save schema diff to file
+        run: |
+          cat <<EOF > schema-diff.json
+          ${{ steps.get-sql-data.outputs.schema-diff }}
+          EOF
+
+      - name: Upload SQL Queries Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sql-queries
+          path: queries.json
+
+      - name: Upload SQL Diff Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sql-diff
+          path: diff.json
+
+      - name: Upload SQL Schema Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sql-schema
+          path: schema.json
+
+      - name: Upload SQL Schema Diff Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sql-schema-diff
+          path: schema-diff.json
