@@ -190,8 +190,8 @@ func getConstraints(db *sql.DB, schema string, table string) ([]ConstraintSchema
 	FROM
 		pg_constraint
 	WHERE
-		conrelid::regclass = $1 AND
-		connamespace::regnamespace = $2`, table, schema)
+		conrelid = ($1::text || '.' || $2::text)::regclass AND
+		connamespace = $3::regnamespace`, schema, table, schema)
 	if err != nil {
 		return nil, err
 	}
