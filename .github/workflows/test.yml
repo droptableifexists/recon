@@ -124,5 +124,5 @@ jobs:
       - name: Upload SQL Schema Diff Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: sql-schema-diff
+          name: schema-diff
           path: schema-diff.json
