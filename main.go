@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	_ "github.com/lib/pq"
 )
 
@@ -84,9 +85,9 @@ func main() {
 	}
 
 	schemaBaseline := getArtifactFromMain("full-schema")
-	fmt.Print("schemaBaseline:")
-	fmt.Print(schemaBaseline)
-	schemaDiff := diffSchema(string(schemaJSON), schemaBaseline)
+	var schemaBaselineJSON []DatabaseSchema
+	json.Unmarshal([]byte(schemaBaseline), &schemaBaselineJSON)
+	schemaDiff := cmp.Diff(databaseSchema, schemaBaselineJSON)
 
 	// Write to GITHUB_OUTPUT
 	outputPath := os.Getenv("GITHUB_OUTPUT")
@@ -249,121 +250,6 @@ func diffQueries(current, baseline string) string {
 	}
 
 	diffBytes, _ := json.Marshal(newQueries)
-	return string(diffBytes)
-}
-
-func diffSchema(current, baseline string) string {
-	var currentSchema, baselineSchema []DatabaseSchema
-	json.Unmarshal([]byte(current), &currentSchema)
-	json.Unmarshal([]byte(baseline), &baselineSchema)
-
-	diff := SchemaDiff{
-		ModifiedTables: make(map[string]map[string]TableDiff),
-	}
-
-	// Create maps for easier lookup
-	baselineDBs := make(map[string]DatabaseSchema)
-	currentDBs := make(map[string]DatabaseSchema)
-
-	for _, db := range baselineSchema {
-		baselineDBs[db.Database] = db
-	}
-	for _, db := range currentSchema {
-		currentDBs[db.Database] = db
-	}
-
-	fmt.Print("currentDBs:")
-	fmt.Print(currentDBs)
-	fmt.Print("baselineDBs:")
-	fmt.Print(baselineDBs)
-
-	// Find added/removed databases
-	for dbName, currentDB := range currentDBs {
-		if baselineDB, exists := baselineDBs[dbName]; !exists {
-			// Only add if it's a new database
-			diff.AddedDatabases = append(diff.AddedDatabases, dbName)
-		} else {
-			// Compare tables in existing database
-			tableDiffs := make(map[string]TableDiff)
-
-			// Check for added/modified tables
-			for tableName, currentTable := range currentDB.Tables {
-				baselineTable, tableExists := baselineDB.Tables[tableName]
-
-				if !tableExists {
-					// New table
-					tableDiffs[tableName] = TableDiff{Added: true}
-					continue
-				}
-
-				// Compare existing table
-				tableDiff := TableDiff{
-					Columns:     make(map[string]ColumnDiff),
-					Indexes:     []IndexDiff{},
-					Constraints: []ConstraintDiff{},
-				}
-
-				// Check schema changes
-				if currentTable.Schema != baselineTable.Schema {
-					tableDiff.SchemaChange = currentTable.Schema
-				}
-
-				// Compare columns
-				currentColumns := make(map[string]ColumnSchema)
-				baselineColumns := make(map[string]ColumnSchema)
-
-				for _, col := range currentTable.Columns {
-					currentColumns[col.Name] = col
-				}
-				for _, col := range baselineTable.Columns {
-					baselineColumns[col.Name] = col
-				}
-
-				// Find new columns
-				for colName := range currentColumns {
-					if _, exists := baselineColumns[colName]; !exists {
-						tableDiff.Columns[colName] = ColumnDiff{Added: true}
-					}
-				}
-
-				// Compare indexes
-				currentIndexDefs := make(map[string]bool)
-				baselineIndexDefs := make(map[string]bool)
-
-				for _, idx := range currentTable.Indexes {
-					currentIndexDefs[idx.Definition] = true
-				}
-				for _, idx := range baselineTable.Indexes {
-					baselineIndexDefs[idx.Definition] = true
-				}
-
-				// Find new indexes
-				for _, idx := range currentTable.Indexes {
-					if !baselineIndexDefs[idx.Definition] {
-						tableDiff.Indexes = append(tableDiff.Indexes, IndexDiff{New: idx.Definition})
-					}
-				}
-
-				// Only add table diff if there are actual changes
-				if len(tableDiff.Columns) > 0 || len(tableDiff.Indexes) > 0 || tableDiff.SchemaChange != "" {
-					tableDiffs[tableName] = tableDiff
-				}
-			}
-
-			if len(tableDiffs) > 0 {
-				diff.ModifiedTables[dbName] = tableDiffs
-			}
-		}
-	}
-
-	// Find removed databases
-	for dbName := range baselineDBs {
-		if _, exists := currentDBs[dbName]; !exists {
-			diff.RemovedDatabases = append(diff.RemovedDatabases, dbName)
-		}
-	}
-
-	diffBytes, _ := json.Marshal(diff)
 	return string(diffBytes)
 }
 
