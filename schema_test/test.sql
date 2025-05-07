@@ -34,4 +34,8 @@ CREATE INDEX idx_orders_customer ON orders (customer_id);
 SET search_path TO public;
 
 create unique index idx_orders_customer on orders (customer_id);
-create foreign key fk_order_customer on orders (customer_id) references customers (customer_id);
+
+ALTER TABLE orders
+ADD CONSTRAINT fk_customer
+FOREIGN KEY (customer_id) 
+REFERENCES customers(customer_id);
