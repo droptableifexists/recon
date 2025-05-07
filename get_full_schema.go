@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"strings"
 )
 
 type DatabaseSchema struct {
@@ -35,6 +36,21 @@ type ConstraintSchema struct {
 	Type    string
 	Columns []string
 	Unique  bool
+}
+
+type SchemaDiff struct {
+	Changes []SchemaChange `json:"changes"`
+}
+
+type SchemaChange struct {
+	Database string `json:"database"`
+	Schema   string `json:"schema"`
+	Table    string `json:"table"`
+	Type     string `json:"type"` // "column_added", "column_removed", "column_modified", "index_added", "index_removed", "constraint_added", "constraint_removed", "table_added", "table_removed"
+	Name     string `json:"name"`
+	OldValue string `json:"old_value,omitempty"`
+	NewValue string `json:"new_value,omitempty"`
+	Details  string `json:"details,omitempty"`
 }
 
 func GetDatabaseSchema(connectionString string) []DatabaseSchema {
@@ -166,4 +182,210 @@ func getIndexes(db *sql.DB, schema string, table string) ([]IndexSchema, error) 
 		})
 	}
 	return indexes, nil
+}
+
+func CompareSchema(current, baseline []DatabaseSchema) SchemaDiff {
+	var changes []SchemaChange
+	old := getDatabaseSchemaMap(baseline)
+	new := getDatabaseSchemaMap(current)
+
+	// Compare tables in each database
+	for dbName, currentDB := range new {
+		baselineDB, exists := old[dbName]
+		if !exists {
+			continue
+		}
+
+		// Check for added/modified tables
+		for tableName, currentTable := range currentDB.Tables {
+			baselineTable, tableExists := baselineDB.Tables[tableName]
+
+			if !tableExists {
+				// New table
+				changes = append(changes, SchemaChange{
+					Database: dbName,
+					Schema:   currentTable.Schema,
+					Table:    tableName,
+					Type:     "table_added",
+					Name:     tableName,
+				})
+				continue
+			}
+
+			// Compare columns
+			currentColumns := make(map[string]ColumnSchema)
+			baselineColumns := make(map[string]ColumnSchema)
+
+			for _, col := range currentTable.Columns {
+				currentColumns[col.Name] = col
+			}
+			for _, col := range baselineTable.Columns {
+				baselineColumns[col.Name] = col
+			}
+
+			// Find new and modified columns
+			for colName, currentCol := range currentColumns {
+				if baselineCol, exists := baselineColumns[colName]; !exists {
+					changes = append(changes, SchemaChange{
+						Database: dbName,
+						Schema:   currentTable.Schema,
+						Table:    tableName,
+						Type:     "column_added",
+						Name:     colName,
+						NewValue: fmt.Sprintf("%s %s", currentCol.Type, map[bool]string{true: "NULL", false: "NOT NULL"}[currentCol.Nullable]),
+					})
+				} else {
+					// Check for column modifications
+					if currentCol.Type != baselineCol.Type {
+						changes = append(changes, SchemaChange{
+							Database: dbName,
+							Schema:   currentTable.Schema,
+							Table:    tableName,
+							Type:     "column_modified",
+							Name:     colName,
+							OldValue: baselineCol.Type,
+							NewValue: currentCol.Type,
+							Details:  "type",
+						})
+					}
+					if currentCol.Nullable != baselineCol.Nullable {
+						changes = append(changes, SchemaChange{
+							Database: dbName,
+							Schema:   currentTable.Schema,
+							Table:    tableName,
+							Type:     "column_modified",
+							Name:     colName,
+							OldValue: map[bool]string{true: "NULL", false: "NOT NULL"}[baselineCol.Nullable],
+							NewValue: map[bool]string{true: "NULL", false: "NOT NULL"}[currentCol.Nullable],
+							Details:  "nullability",
+						})
+					}
+				}
+			}
+
+			// Find removed columns
+			for colName := range baselineColumns {
+				if _, exists := currentColumns[colName]; !exists {
+					changes = append(changes, SchemaChange{
+						Database: dbName,
+						Schema:   currentTable.Schema,
+						Table:    tableName,
+						Type:     "column_removed",
+						Name:     colName,
+						OldValue: fmt.Sprintf("%s %s", baselineColumns[colName].Type, map[bool]string{true: "NULL", false: "NOT NULL"}[baselineColumns[colName].Nullable]),
+					})
+				}
+			}
+
+			// Compare indexes
+			currentIndexDefs := make(map[string]bool)
+			baselineIndexDefs := make(map[string]bool)
+
+			for _, idx := range currentTable.Indexes {
+				currentIndexDefs[idx.Definition] = true
+			}
+			for _, idx := range baselineTable.Indexes {
+				baselineIndexDefs[idx.Definition] = true
+			}
+
+			// Find changed indexes
+			for _, idx := range currentTable.Indexes {
+				if !baselineIndexDefs[idx.Definition] {
+					changes = append(changes, SchemaChange{
+						Database: dbName,
+						Schema:   currentTable.Schema,
+						Table:    tableName,
+						Type:     "index_added",
+						Name:     extractIndexName(idx.Definition),
+						NewValue: idx.Definition,
+					})
+				}
+			}
+			for _, idx := range baselineTable.Indexes {
+				if !currentIndexDefs[idx.Definition] {
+					changes = append(changes, SchemaChange{
+						Database: dbName,
+						Schema:   currentTable.Schema,
+						Table:    tableName,
+						Type:     "index_removed",
+						Name:     extractIndexName(idx.Definition),
+						OldValue: idx.Definition,
+					})
+				}
+			}
+
+			// Compare constraints
+			currentConstraintDefs := make(map[string]bool)
+			baselineConstraintDefs := make(map[string]bool)
+
+			for _, c := range currentTable.Constraints {
+				def := fmt.Sprintf("%s %s (%s)", c.Name, c.Type, strings.Join(c.Columns, ", "))
+				currentConstraintDefs[def] = true
+			}
+			for _, c := range baselineTable.Constraints {
+				def := fmt.Sprintf("%s %s (%s)", c.Name, c.Type, strings.Join(c.Columns, ", "))
+				baselineConstraintDefs[def] = true
+			}
+
+			// Find changed constraints
+			for _, c := range currentTable.Constraints {
+				def := fmt.Sprintf("%s %s (%s)", c.Name, c.Type, strings.Join(c.Columns, ", "))
+				if !baselineConstraintDefs[def] {
+					changes = append(changes, SchemaChange{
+						Database: dbName,
+						Schema:   currentTable.Schema,
+						Table:    tableName,
+						Type:     "constraint_added",
+						Name:     c.Name,
+						NewValue: def,
+					})
+				}
+			}
+			for _, c := range baselineTable.Constraints {
+				def := fmt.Sprintf("%s %s (%s)", c.Name, c.Type, strings.Join(c.Columns, ", "))
+				if !currentConstraintDefs[def] {
+					changes = append(changes, SchemaChange{
+						Database: dbName,
+						Schema:   currentTable.Schema,
+						Table:    tableName,
+						Type:     "constraint_removed",
+						Name:     c.Name,
+						OldValue: def,
+					})
+				}
+			}
+		}
+
+		// Check for removed tables
+		for tableName := range baselineDB.Tables {
+			if _, exists := currentDB.Tables[tableName]; !exists {
+				changes = append(changes, SchemaChange{
+					Database: dbName,
+					Schema:   baselineDB.Tables[tableName].Schema,
+					Table:    tableName,
+					Type:     "table_removed",
+					Name:     tableName,
+				})
+			}
+		}
+	}
+
+	return SchemaDiff{Changes: changes}
+}
+
+func extractIndexName(definition string) string {
+	// Simple extraction of index name from CREATE INDEX statement
+	parts := strings.Split(definition, " ")
+	if len(parts) >= 3 {
+		return parts[2]
+	}
+	return definition
+}
+
+func getDatabaseSchemaMap(databases []DatabaseSchema) map[string]DatabaseSchema {
+	databaseSchemaMap := map[string]DatabaseSchema{}
+	for _, database := range databases {
+		databaseSchemaMap[database.Database] = database
+	}
+	return databaseSchemaMap
 }
