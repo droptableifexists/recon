@@ -207,7 +207,7 @@ func getArtifactFromMain(name string) string {
 	defer zipReader.Close()
 
 	for _, file := range zipReader.File {
-		if file.Name == "queries.json" || file.Name == "schema.json" {
+		if file.Name == "queries.json" || file.Name == "full-schema.json" {
 			rc, err := file.Open()
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: Failed to open queries.json in zip: %v\n", err)
