@@ -278,6 +278,11 @@ func diffSchema(current, baseline string) string {
 		currentDBs[db.Database] = db
 	}
 
+	fmt.Print("currentDBs:")
+	fmt.Print(currentDBs)
+	fmt.Print("baselineDBs:")
+	fmt.Print(baselineDBs)
+
 	// Find added/removed databases
 	for dbName, currentDB := range currentDBs {
 		if baselineDB, exists := baselineDBs[dbName]; !exists {
