@@ -33,7 +33,7 @@ CREATE INDEX idx_orders_customer ON orders (customer_id);
 -- Reset search path
 SET search_path TO public;
 
-CREATE TABLE testschema.test (
+CREATE TABLE testtest (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL
 );
