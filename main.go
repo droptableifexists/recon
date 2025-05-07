@@ -57,12 +57,12 @@ func main() {
 	// Write to GITHUB_OUTPUT
 	outputPath := os.Getenv("GITHUB_OUTPUT")
 	if outputPath == "" {
-		fmt.Fprintf(os.Stderr, "GITHUB_OUTPUT not set\n")
-		os.Exit(1)
+		// Not running in GitHub Actions, print raw JSON
+		fmt.Println(string(schemaDiffJSON))
+		return
 	}
-	fmt.Print("databaseSchema")
-	fmt.Print(string(schemaJSON))
 
+	// Running in GitHub Actions, escape for GITHUB_OUTPUT
 	output := fmt.Sprintf("sql-queries=%s\nqueries-diff=%s\nschema=%s\nschema-diff=%s\n",
 		escapeMultiline(string(body)),
 		escapeMultiline(queryDiff),

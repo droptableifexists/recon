@@ -39,32 +39,32 @@ type ConstraintSchema struct {
 }
 
 type SchemaDiff struct {
-	Tables map[string]TableChanges
+	Tables map[string]TableChanges `json:"tables"`
 }
 
 type TableChanges struct {
-	Database     string
-	ChangeType   string // "added", "removed", or "modified"
-	SchemaChange string
-	Columns      map[string]ColumnDiff
-	Indexes      []IndexDiff
-	Constraints  []ConstraintDiff
+	Database     string                `json:"database"`
+	ChangeType   string                `json:"change_type"`
+	SchemaChange string                `json:"schema_change,omitempty"`
+	Columns      map[string]ColumnDiff `json:"columns"`
+	Indexes      []IndexDiff           `json:"indexes"`
+	Constraints  []ConstraintDiff      `json:"constraints"`
 }
 
 type ColumnDiff struct {
-	ChangeType  string // "added", "removed", or "modified"
-	TypeChanged string
-	NullChanged bool
+	ChangeType  string `json:"change_type"`
+	TypeChanged string `json:"type_changed,omitempty"`
+	NullChanged bool   `json:"null_changed,omitempty"`
 }
 
 type IndexDiff struct {
-	New string
-	Old string
+	Old string `json:"old,omitempty"`
+	New string `json:"new,omitempty"`
 }
 
 type ConstraintDiff struct {
-	Old string
-	New string
+	Old string `json:"old,omitempty"`
+	New string `json:"new,omitempty"`
 }
 
 func CompareSchema(current, baseline []DatabaseSchema) SchemaDiff {
@@ -89,8 +89,11 @@ func CompareSchema(current, baseline []DatabaseSchema) SchemaDiff {
 			if !tableExists {
 				// New table
 				schemaDiff.Tables[tableKey] = TableChanges{
-					Database:   dbName,
-					ChangeType: "added",
+					Database:    dbName,
+					ChangeType:  "added",
+					Columns:     make(map[string]ColumnDiff),
+					Indexes:     []IndexDiff{},
+					Constraints: []ConstraintDiff{},
 				}
 				continue
 			}
