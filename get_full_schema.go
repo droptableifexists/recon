@@ -38,9 +38,7 @@ type ConstraintSchema struct {
 	Unique  bool
 }
 
-type SchemaDiff struct {
-	Changes []TableChanges `json:"changes"`
-}
+type SchemaDiff []TableChanges
 
 type TableChanges struct {
 	Database string         `json:"database"`
@@ -370,7 +368,7 @@ func CompareSchema(current, baseline []DatabaseSchema) SchemaDiff {
 		}
 	}
 
-	return SchemaDiff{Changes: tableChanges}
+	return SchemaDiff(tableChanges)
 }
 
 func extractIndexName(definition string) string {
