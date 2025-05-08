@@ -78,8 +78,6 @@ func main() {
 	}
 
 	schemaBaseline := getArtifactFromMain("full-schema")
-	fmt.Print("schemaBaseline:")
-	fmt.Print(schemaBaseline)
 
 	// Parse the baseline schema from JSON string
 	var baselineSchema []DatabaseSchema
@@ -101,8 +99,6 @@ func main() {
 		fmt.Fprintf(os.Stderr, "GITHUB_OUTPUT not set\n")
 		os.Exit(1)
 	}
-	fmt.Print("databaseSchema")
-	fmt.Print(string(schemaJSON))
 
 	output := fmt.Sprintf("sql-queries=%s\nqueries-diff=%s\nschema=%s\nschema-diff=%s\n",
 		escapeMultiline(string(body)),
@@ -164,29 +160,19 @@ func getArtifactFromMain(name string) string {
 		return ""
 	}
 
-	fmt.Fprintf(os.Stderr, "GitHub API Response Status: %s\n", resp.Status)
-	fmt.Fprintf(os.Stderr, "GitHub API Response Body: %s\n", string(body))
-
 	var artifactsResp ArtifactsResponse
 	if err := json.Unmarshal(body, &artifactsResp); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: Failed to decode artifact list: %v\n", err)
 		return ""
 	}
 
-	fmt.Fprintf(os.Stderr, "Found %d total artifacts\n", len(artifactsResp.Artifacts))
-
 	var candidates []Artifact
 	for _, a := range artifactsResp.Artifacts {
-		fmt.Fprintf(os.Stderr, "Artifact: %s (branch: %s)\n", a.Name, a.WorkflowRun.HeadBranch)
 		// Check if this is a main branch artifact
 		if a.WorkflowRun.HeadBranch == "main" {
-			fmt.Fprintf(os.Stderr, "  - Found main branch artifact\n")
 			// Check if name matches what we're looking for
 			if strings.Contains(strings.ToLower(a.Name), strings.ToLower(name)) {
-				fmt.Fprintf(os.Stderr, "  - Name matches '%s'\n", name)
 				candidates = append(candidates, a)
-			} else {
-				fmt.Fprintf(os.Stderr, "  - Name doesn't match '%s'\n", name)
 			}
 		}
 	}

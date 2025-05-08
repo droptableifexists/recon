@@ -33,8 +33,5 @@ ADD CONSTRAINT fk_customer
 FOREIGN KEY (customer_id)   
 REFERENCES customers(customer_id);
 
--- Create index on orders.customer_id for faster lookups
-CREATE INDEX idx_orders_customer ON orders (customer_id);
-
 -- Reset search path
 SET search_path TO public;
