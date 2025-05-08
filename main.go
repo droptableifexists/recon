@@ -63,7 +63,7 @@ func main() {
 	}
 
 	// Fetch baseline artifact queries (optional)
-	queriesBaseline := getArtifactFromMain("queries")
+	queriesBaseline := getArtifactFromMain("sql-queries")
 
 	// Generate JSON diff
 	queryDiff := diffQueries(string(body), queriesBaseline)
@@ -131,17 +131,6 @@ func getArtifactFromMain(name string) string {
 	req, _ := http.NewRequest("GET", apiURL, nil)
 	req.Header.Set("Authorization", "token "+token)
 	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: Failed to list artifacts: %v\n", err)
-		return ""
-	}
-	defer resp.Body.Close()
-
-	fmt.Print("resp.Body:")
-	fmt.Print(resp.Body)
-	fmt.Print("status:")
-	fmt.Print(resp.Status)
 
 	type Artifact struct {
 		Name        string `json:"name"`
@@ -152,25 +141,56 @@ func getArtifactFromMain(name string) string {
 		} `json:"workflow_run"`
 	}
 	type ArtifactsResponse struct {
-		Artifacts []Artifact `json:"artifacts"`
+		TotalCount int        `json:"total_count"`
+		Artifacts  []Artifact `json:"artifacts"`
 	}
 
+	// Add name parameter and increase per_page to 100
+	apiURL = fmt.Sprintf("%s?per_page=100&name=%s", apiURL, name)
+	req, _ = http.NewRequest("GET", apiURL, nil)
+	req.Header.Set("Authorization", "token "+token)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: Failed to list artifacts: %v\n", err)
+		return ""
+	}
+	defer resp.Body.Close()
+
+	// Read the response body
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: Failed to read artifact list response: %v\n", err)
+		return ""
+	}
+
+	fmt.Fprintf(os.Stderr, "GitHub API Response Status: %s\n", resp.Status)
+	fmt.Fprintf(os.Stderr, "GitHub API Response Body: %s\n", string(body))
+
 	var artifactsResp ArtifactsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&artifactsResp); err != nil {
+	if err := json.Unmarshal(body, &artifactsResp); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: Failed to decode artifact list: %v\n", err)
 		return ""
 	}
 
+	fmt.Fprintf(os.Stderr, "Found %d total artifacts\n", len(artifactsResp.Artifacts))
+
 	var candidates []Artifact
 	for _, a := range artifactsResp.Artifacts {
-		fmt.Print("a:")
-		fmt.Print(a.Name)
-		if a.WorkflowRun.HeadBranch == "main" && strings.Contains(strings.ToLower(a.Name), name) {
-			candidates = append(candidates, a)
+		fmt.Fprintf(os.Stderr, "Artifact: %s (branch: %s)\n", a.Name, a.WorkflowRun.HeadBranch)
+		// Check if this is a main branch artifact
+		if a.WorkflowRun.HeadBranch == "main" {
+			fmt.Fprintf(os.Stderr, "  - Found main branch artifact\n")
+			// Check if name matches what we're looking for
+			if strings.Contains(strings.ToLower(a.Name), strings.ToLower(name)) {
+				fmt.Fprintf(os.Stderr, "  - Name matches '%s'\n", name)
+				candidates = append(candidates, a)
+			} else {
+				fmt.Fprintf(os.Stderr, "  - Name doesn't match '%s'\n", name)
+			}
 		}
 	}
-	fmt.Print("name:")
-	fmt.Print(name)
+
 	if len(candidates) == 0 {
 		fmt.Fprintf(os.Stderr, "Warning: No suitable baseline artifact from main branch found\n")
 		return ""
@@ -183,7 +203,7 @@ func getArtifactFromMain(name string) string {
 	})
 
 	latest := candidates[0]
-	fmt.Fprintf(os.Stderr, "Found baseline artifact: %s (created at: %s)\n", latest.Name, latest.CreatedAt)
+	fmt.Fprintf(os.Stderr, "Selected artifact: %s (created at: %s)\n", latest.Name, latest.CreatedAt)
 
 	// Download the ZIP archive of the artifact
 	reqZip, _ := http.NewRequest("GET", latest.ArchiveURL, nil)
@@ -222,7 +242,7 @@ func getArtifactFromMain(name string) string {
 	defer zipReader.Close()
 
 	for _, file := range zipReader.File {
-		if file.Name == "queries.json" || file.Name == "full-schema.json" {
+		if file.Name == "sql-queries.json" || file.Name == "full-schema.json" {
 			rc, err := file.Open()
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: Failed to open queries.json in zip: %v\n", err)
