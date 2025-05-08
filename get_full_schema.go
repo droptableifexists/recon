@@ -217,15 +217,15 @@ func CompareSchema(current, baseline []DatabaseSchema) []TableChanges {
 		}
 
 		// Check for added/modified tables
-		for tableName, currentTable := range currentDB.Tables {
-			baselineTable, tableExists := baselineDB.Tables[tableName]
+		for _, currentTable := range currentDB.Tables {
+			baselineTable, tableExists := baselineDB.Tables[currentTable.Name]
 
 			if !tableExists {
 				// New table
 				tableChanges = append(tableChanges, TableChanges{
 					Database: dbName,
 					Schema:   currentTable.Schema,
-					Table:    tableName,
+					Table:    currentTable.Name,
 					New:      &currentTable,
 				})
 				continue
@@ -237,7 +237,7 @@ func CompareSchema(current, baseline []DatabaseSchema) []TableChanges {
 				tableChanges = append(tableChanges, TableChanges{
 					Database: dbName,
 					Schema:   currentTable.Schema,
-					Table:    tableName,
+					Table:    currentTable.Name,
 					Old:      &baselineTable,
 					New:      &currentTable,
 				})
@@ -245,13 +245,12 @@ func CompareSchema(current, baseline []DatabaseSchema) []TableChanges {
 		}
 
 		// Check for removed tables
-		for tableName := range baselineDB.Tables {
-			if _, exists := currentDB.Tables[tableName]; !exists {
-				oldTable := baselineDB.Tables[tableName]
+		for _, oldTable := range baselineDB.Tables {
+			if _, exists := currentDB.Tables[oldTable.Name]; !exists {
 				tableChanges = append(tableChanges, TableChanges{
 					Database: dbName,
 					Schema:   oldTable.Schema,
-					Table:    tableName,
+					Table:    oldTable.Name,
 					Old:      &oldTable,
 				})
 			}
