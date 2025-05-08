@@ -101,8 +101,6 @@ func main() {
 		fmt.Fprintf(os.Stderr, "GITHUB_OUTPUT not set\n")
 		os.Exit(1)
 	}
-	fmt.Print("databaseSchema")
-	fmt.Print(string(schemaJSON))
 
 	output := fmt.Sprintf("sql-queries=%s\nqueries-diff=%s\nschema=%s\nschema-diff=%s\n",
 		escapeMultiline(string(body)),
@@ -163,9 +161,6 @@ func getArtifactFromMain(name string) string {
 		fmt.Fprintf(os.Stderr, "Warning: Failed to read artifact list response: %v\n", err)
 		return ""
 	}
-
-	fmt.Fprintf(os.Stderr, "GitHub API Response Status: %s\n", resp.Status)
-	fmt.Fprintf(os.Stderr, "GitHub API Response Body: %s\n", string(body))
 
 	var artifactsResp ArtifactsResponse
 	if err := json.Unmarshal(body, &artifactsResp); err != nil {
