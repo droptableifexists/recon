@@ -2,7 +2,6 @@ package main
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"os"
 	"reflect"
@@ -216,25 +215,21 @@ func CompareSchema(current, baseline []DatabaseSchema) []TableChanges {
 		if baselineDB, exists := baselineDB[currentDB.Database]; !exists {
 			continue
 		} else {
-			for _, currentTable := range currentDB.Tables {
-				if baselineTable, exists := baselineDB.Tables[currentTable.Name]; !exists {
+			for tableKey, currentTable := range currentDB.Tables {
+				// Use the same table key to look up in baseline
+				if baselineTable, exists := baselineDB.Tables[tableKey]; !exists {
 					continue
 				} else {
-					if reflect.DeepEqual(currentTable, baselineTable) {
-						continue
-					} else {
-						jsonCurrent, _ := json.Marshal(currentTable)
-						jsonBaseline, _ := json.Marshal(baselineTable)
-						fmt.Print("\n currentTable: \n")
-						fmt.Print(string(jsonCurrent))
-						fmt.Print("\n baselineTable: \n")
-						fmt.Print(string(jsonBaseline))
+					if !reflect.DeepEqual(currentTable, baselineTable) {
+						// Create a copy of the tables to ensure we don't modify the originals
+						oldTable := baselineTable
+						newTable := currentTable
 						tableChanges = append(tableChanges, TableChanges{
 							Database: currentDB.Database,
 							Schema:   currentTable.Schema,
 							Table:    currentTable.Name,
-							Old:      &baselineTable,
-							New:      &currentTable,
+							Old:      &oldTable,
+							New:      &newTable,
 						})
 					}
 				}
