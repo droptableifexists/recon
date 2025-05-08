@@ -220,13 +220,13 @@ func CompareSchema(current, baseline []DatabaseSchema) []TableChanges {
 				if baselineTable, exists := baselineDB.Tables[currentTable.Name]; !exists {
 					continue
 				} else {
-					jsonCurrent, _ := json.Marshal(currentTable)
-					jsonBaseline, _ := json.Marshal(baselineTable)
-					fmt.Println(string(jsonCurrent))
-					fmt.Println(string(jsonBaseline))
 					if reflect.DeepEqual(currentTable, baselineTable) {
 						continue
 					} else {
+						jsonCurrent, _ := json.Marshal(currentTable)
+						jsonBaseline, _ := json.Marshal(baselineTable)
+						fmt.Println(string(jsonCurrent))
+						fmt.Println(string(jsonBaseline))
 						tableChanges = append(tableChanges, TableChanges{
 							Database: currentDB.Database,
 							Schema:   currentTable.Schema,
