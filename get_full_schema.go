@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
-	"strings"
+	"reflect"
 )
 
 type DatabaseSchema struct {
@@ -35,18 +35,12 @@ type ConstraintSchema struct {
 	Definition string
 }
 
-type SchemaDiff []TableChanges
-
 type TableChanges struct {
-	Database string         `json:"database"`
-	Schema   string         `json:"schema"`
-	Table    string         `json:"table"`
-	Changes  []SchemaChange `json:"changes"`
-}
-
-type SchemaChange struct {
-	Type   string                 `json:"type"` // "column_added", "column_removed", "column_modified", "index_added", "index_removed", "constraint_added", "constraint_removed"
-	Change map[string]interface{} `json:"change"`
+	Database string       `json:"database"`
+	Schema   string       `json:"schema"`
+	Table    string       `json:"table"`
+	Old      *TableSchema `json:"old,omitempty"`
+	New      *TableSchema `json:"new,omitempty"`
 }
 
 func GetDatabaseSchema(connectionString string) []DatabaseSchema {
@@ -210,7 +204,7 @@ func getConstraints(db *sql.DB, schema string, table string) ([]ConstraintSchema
 	return constraints, nil
 }
 
-func CompareSchema(current, baseline []DatabaseSchema) SchemaDiff {
+func CompareSchema(current, baseline []DatabaseSchema) []TableChanges {
 	var tableChanges []TableChanges
 	old := getDatabaseSchemaMap(baseline)
 	new := getDatabaseSchemaMap(current)
@@ -232,156 +226,20 @@ func CompareSchema(current, baseline []DatabaseSchema) SchemaDiff {
 					Database: dbName,
 					Schema:   currentTable.Schema,
 					Table:    tableName,
-					Changes: []SchemaChange{
-						{
-							Type: "table_added",
-							Change: map[string]interface{}{
-								"name": tableName,
-							},
-						},
-					},
+					New:      &currentTable,
 				})
 				continue
 			}
 
 			// Compare existing table
-			var changes []SchemaChange
-
-			// Compare columns
-			currentColumns := make(map[string]ColumnSchema)
-			baselineColumns := make(map[string]ColumnSchema)
-
-			for _, col := range currentTable.Columns {
-				currentColumns[col.Name] = col
-			}
-			for _, col := range baselineTable.Columns {
-				baselineColumns[col.Name] = col
-			}
-
-			// Find new and modified columns
-			for colName, currentCol := range currentColumns {
-				if baselineCol, exists := baselineColumns[colName]; !exists {
-					changes = append(changes, SchemaChange{
-						Type: "column_added",
-						Change: map[string]interface{}{
-							"name":       colName,
-							"definition": fmt.Sprintf("%s %s", currentCol.Type, map[bool]string{true: "NULL", false: "NOT NULL"}[currentCol.Nullable]),
-						},
-					})
-				} else {
-					// Check for column modifications
-					if currentCol.Type != baselineCol.Type {
-						changes = append(changes, SchemaChange{
-							Type: "column_modified",
-							Change: map[string]interface{}{
-								"name":   colName,
-								"old":    baselineCol.Type,
-								"new":    currentCol.Type,
-								"detail": "type",
-							},
-						})
-					}
-					if currentCol.Nullable != baselineCol.Nullable {
-						changes = append(changes, SchemaChange{
-							Type: "column_modified",
-							Change: map[string]interface{}{
-								"name":   colName,
-								"old":    map[bool]string{true: "NULL", false: "NOT NULL"}[baselineCol.Nullable],
-								"new":    map[bool]string{true: "NULL", false: "NOT NULL"}[currentCol.Nullable],
-								"detail": "nullability",
-							},
-						})
-					}
-				}
-			}
-
-			// Find removed columns
-			for colName := range baselineColumns {
-				if _, exists := currentColumns[colName]; !exists {
-					changes = append(changes, SchemaChange{
-						Type: "column_removed",
-						Change: map[string]interface{}{
-							"name": colName,
-							"old":  fmt.Sprintf("%s %s", baselineColumns[colName].Type, map[bool]string{true: "NULL", false: "NOT NULL"}[baselineColumns[colName].Nullable]),
-						},
-					})
-				}
-			}
-
-			// Compare indexes
-			currentIndexDefs := make(map[string]bool)
-			baselineIndexDefs := make(map[string]bool)
-
-			for _, idx := range currentTable.Indexes {
-				currentIndexDefs[idx.Definition] = true
-			}
-			for _, idx := range baselineTable.Indexes {
-				baselineIndexDefs[idx.Definition] = true
-			}
-
-			// Find changed indexes
-			for _, idx := range currentTable.Indexes {
-				if !baselineIndexDefs[idx.Definition] {
-					changes = append(changes, SchemaChange{
-						Type: "index_added",
-						Change: map[string]interface{}{
-							"name":       extractIndexName(idx.Definition),
-							"definition": idx.Definition,
-						},
-					})
-				}
-			}
-			for _, idx := range baselineTable.Indexes {
-				if !currentIndexDefs[idx.Definition] {
-					changes = append(changes, SchemaChange{
-						Type: "index_removed",
-						Change: map[string]interface{}{
-							"name": extractIndexName(idx.Definition),
-							"old":  idx.Definition,
-						},
-					})
-				}
-			}
-
-			// Compare constraints
-			currentConstraintDefs := make(map[string]bool)
-			baselineConstraintDefs := make(map[string]bool)
-
-			for _, c := range currentTable.Constraints {
-				currentConstraintDefs[c.Definition] = true
-			}
-			for _, c := range baselineTable.Constraints {
-				baselineConstraintDefs[c.Definition] = true
-			}
-
-			// Find changed constraints
-			for _, c := range currentTable.Constraints {
-				if !baselineConstraintDefs[c.Definition] {
-					changes = append(changes, SchemaChange{
-						Type: "constraint_added",
-						Change: map[string]interface{}{
-							"definition": c.Definition,
-						},
-					})
-				}
-			}
-			for _, bl := range baselineTable.Constraints {
-				if !currentConstraintDefs[bl.Definition] {
-					changes = append(changes, SchemaChange{
-						Type: "constraint_removed",
-						Change: map[string]interface{}{
-							"definition": bl.Definition,
-						},
-					})
-				}
-			}
-
-			if len(changes) > 0 {
+			// If tables are not equal, store both old and new states
+			if !reflect.DeepEqual(baselineTable, currentTable) {
 				tableChanges = append(tableChanges, TableChanges{
 					Database: dbName,
 					Schema:   currentTable.Schema,
 					Table:    tableName,
-					Changes:  changes,
+					Old:      &baselineTable,
+					New:      &currentTable,
 				})
 			}
 		}
@@ -389,33 +247,18 @@ func CompareSchema(current, baseline []DatabaseSchema) SchemaDiff {
 		// Check for removed tables
 		for tableName := range baselineDB.Tables {
 			if _, exists := currentDB.Tables[tableName]; !exists {
+				oldTable := baselineDB.Tables[tableName]
 				tableChanges = append(tableChanges, TableChanges{
 					Database: dbName,
-					Schema:   baselineDB.Tables[tableName].Schema,
+					Schema:   oldTable.Schema,
 					Table:    tableName,
-					Changes: []SchemaChange{
-						{
-							Type: "table_removed",
-							Change: map[string]interface{}{
-								"name": tableName,
-							},
-						},
-					},
+					Old:      &oldTable,
 				})
 			}
 		}
 	}
 
-	return SchemaDiff(tableChanges)
-}
-
-func extractIndexName(definition string) string {
-	// Simple extraction of index name from CREATE INDEX statement
-	parts := strings.Split(definition, " ")
-	if len(parts) >= 3 {
-		return parts[2]
-	}
-	return definition
+	return tableChanges
 }
 
 func getDatabaseSchemaMap(databases []DatabaseSchema) map[string]DatabaseSchema {
