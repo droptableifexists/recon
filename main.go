@@ -76,6 +76,8 @@ func main() {
 		os.Exit(1)
 	}
 
+	fmt.Print(string(queryWithPlansJSON))
+
 	// Generate schema SQL
 	connStr := "host=postgres port=5432 user=postgres password=postgres dbname=postgres sslmode=disable"
 	databaseSchema := GetDatabaseSchema(connStr)
