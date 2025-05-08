@@ -138,10 +138,15 @@ func getArtifactFromMain(name string) string {
 	}
 	defer resp.Body.Close()
 
-	fmt.Print("resp.Body:")
-	fmt.Print(resp.Body)
-	fmt.Print("status:")
-	fmt.Print(resp.Status)
+	// Read the response body
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: Failed to read artifact list response: %v\n", err)
+		return ""
+	}
+
+	fmt.Fprintf(os.Stderr, "GitHub API Response Status: %s\n", resp.Status)
+	fmt.Fprintf(os.Stderr, "GitHub API Response Body: %s\n", string(body))
 
 	type Artifact struct {
 		Name        string `json:"name"`
@@ -156,21 +161,29 @@ func getArtifactFromMain(name string) string {
 	}
 
 	var artifactsResp ArtifactsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&artifactsResp); err != nil {
+	if err := json.Unmarshal(body, &artifactsResp); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: Failed to decode artifact list: %v\n", err)
 		return ""
 	}
 
+	fmt.Fprintf(os.Stderr, "Found %d total artifacts\n", len(artifactsResp.Artifacts))
+
 	var candidates []Artifact
 	for _, a := range artifactsResp.Artifacts {
-		fmt.Print("a:")
-		fmt.Print(a.Name)
-		if a.WorkflowRun.HeadBranch == "main" && strings.Contains(strings.ToLower(a.Name), name) {
-			candidates = append(candidates, a)
+		fmt.Fprintf(os.Stderr, "Artifact: %s (branch: %s)\n", a.Name, a.WorkflowRun.HeadBranch)
+		// Check if this is a main branch artifact
+		if a.WorkflowRun.HeadBranch == "main" {
+			fmt.Fprintf(os.Stderr, "  - Found main branch artifact\n")
+			// Check if name matches what we're looking for
+			if strings.Contains(strings.ToLower(a.Name), strings.ToLower(name)) {
+				fmt.Fprintf(os.Stderr, "  - Name matches '%s'\n", name)
+				candidates = append(candidates, a)
+			} else {
+				fmt.Fprintf(os.Stderr, "  - Name doesn't match '%s'\n", name)
+			}
 		}
 	}
-	fmt.Print("name:")
-	fmt.Print(name)
+
 	if len(candidates) == 0 {
 		fmt.Fprintf(os.Stderr, "Warning: No suitable baseline artifact from main branch found\n")
 		return ""
@@ -183,7 +196,7 @@ func getArtifactFromMain(name string) string {
 	})
 
 	latest := candidates[0]
-	fmt.Fprintf(os.Stderr, "Found baseline artifact: %s (created at: %s)\n", latest.Name, latest.CreatedAt)
+	fmt.Fprintf(os.Stderr, "Selected artifact: %s (created at: %s)\n", latest.Name, latest.CreatedAt)
 
 	// Download the ZIP archive of the artifact
 	reqZip, _ := http.NewRequest("GET", latest.ArchiveURL, nil)
