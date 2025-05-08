@@ -68,6 +68,14 @@ func main() {
 	// Generate JSON diff
 	queryDiff := diffQueries(string(body), queriesBaseline)
 
+	queryWithPlans := AddQueryPlansForChanges(queryDiff)
+
+	queryWithPlansJSON, err := json.Marshal(queryWithPlans)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to marshal query with plans: %v\n", err)
+		os.Exit(1)
+	}
+
 	// Generate schema SQL
 	connStr := "host=postgres port=5432 user=postgres password=postgres dbname=postgres sslmode=disable"
 	databaseSchema := GetDatabaseSchema(connStr)
@@ -102,7 +110,7 @@ func main() {
 
 	output := fmt.Sprintf("sql-queries=%s\nqueries-diff=%s\nschema=%s\nschema-diff=%s\n",
 		escapeMultiline(string(body)),
-		escapeMultiline(queryDiff),
+		escapeMultiline(string(queryWithPlansJSON)),
 		escapeMultiline(string(schemaJSON)),
 		escapeMultiline(string(schemaDiffJSON)))
 	if err := os.WriteFile(outputPath, []byte(output), 0644); err != nil {
@@ -250,7 +258,7 @@ func getArtifactFromMain(name string) string {
 	return ""
 }
 
-func diffQueries(current, baseline string) string {
+func diffQueries(current, baseline string) []Query {
 	var currentQueries, baselineQueries []Query
 	json.Unmarshal([]byte(current), &currentQueries)
 	json.Unmarshal([]byte(baseline), &baselineQueries)
@@ -269,8 +277,7 @@ func diffQueries(current, baseline string) string {
 		}
 	}
 
-	diffBytes, _ := json.Marshal(newQueries)
-	return string(diffBytes)
+	return newQueries
 }
 
 // Escape multiline output for GitHub output file
