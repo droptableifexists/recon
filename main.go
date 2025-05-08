@@ -63,7 +63,7 @@ func main() {
 	}
 
 	// Fetch baseline artifact queries (optional)
-	queriesBaseline := getArtifactFromMain("queries")
+	queriesBaseline := getArtifactFromMain("sql-queries")
 
 	// Generate JSON diff
 	queryDiff := diffQueries(string(body), queriesBaseline)
@@ -131,6 +131,25 @@ func getArtifactFromMain(name string) string {
 	req, _ := http.NewRequest("GET", apiURL, nil)
 	req.Header.Set("Authorization", "token "+token)
 	client := &http.Client{}
+
+	type Artifact struct {
+		Name        string `json:"name"`
+		ArchiveURL  string `json:"archive_download_url"`
+		CreatedAt   string `json:"created_at"`
+		WorkflowRun struct {
+			HeadBranch string `json:"head_branch"`
+		} `json:"workflow_run"`
+	}
+	type ArtifactsResponse struct {
+		TotalCount int        `json:"total_count"`
+		Artifacts  []Artifact `json:"artifacts"`
+	}
+
+	// Add name parameter and increase per_page to 100
+	apiURL = fmt.Sprintf("%s?per_page=100&name=%s", apiURL, name)
+	req, _ = http.NewRequest("GET", apiURL, nil)
+	req.Header.Set("Authorization", "token "+token)
+
 	resp, err := client.Do(req)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: Failed to list artifacts: %v\n", err)
@@ -147,18 +166,6 @@ func getArtifactFromMain(name string) string {
 
 	fmt.Fprintf(os.Stderr, "GitHub API Response Status: %s\n", resp.Status)
 	fmt.Fprintf(os.Stderr, "GitHub API Response Body: %s\n", string(body))
-
-	type Artifact struct {
-		Name        string `json:"name"`
-		ArchiveURL  string `json:"archive_download_url"`
-		CreatedAt   string `json:"created_at"`
-		WorkflowRun struct {
-			HeadBranch string `json:"head_branch"`
-		} `json:"workflow_run"`
-	}
-	type ArtifactsResponse struct {
-		Artifacts []Artifact `json:"artifacts"`
-	}
 
 	var artifactsResp ArtifactsResponse
 	if err := json.Unmarshal(body, &artifactsResp); err != nil {
@@ -235,7 +242,7 @@ func getArtifactFromMain(name string) string {
 	defer zipReader.Close()
 
 	for _, file := range zipReader.File {
-		if file.Name == "queries.json" || file.Name == "full-schema.json" {
+		if file.Name == "sql-queries.json" || file.Name == "full-schema.json" {
 			rc, err := file.Open()
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: Failed to open queries.json in zip: %v\n", err)
