@@ -127,8 +127,10 @@ func getTables(connectionString string, database string) (map[string]TableSchema
 		if err := rows.Scan(&schema, &name, &columnName, &dataType, &isNullable); err != nil {
 			return nil, err
 		}
-		if t, ok := tableSchemas[name]; !ok {
-			tableSchemas[name] = TableSchema{
+		// Use fully qualified table name as the key
+		tableKey := fmt.Sprintf("%s.%s", schema, name)
+		if t, ok := tableSchemas[tableKey]; !ok {
+			tableSchemas[tableKey] = TableSchema{
 				Name:    name,
 				Schema:  schema,
 				Columns: []ColumnSchema{},
@@ -147,7 +149,7 @@ func getTables(connectionString string, database string) (map[string]TableSchema
 			if err != nil {
 				return nil, err
 			}
-			tableSchemas[name] = t
+			tableSchemas[tableKey] = t
 		}
 	}
 	return tableSchemas, nil
@@ -217,8 +219,8 @@ func CompareSchema(current, baseline []DatabaseSchema) []TableChanges {
 		}
 
 		// Check for added/modified tables
-		for _, currentTable := range currentDB.Tables {
-			baselineTable, tableExists := baselineDB.Tables[currentTable.Name]
+		for tableKey, currentTable := range currentDB.Tables {
+			baselineTable, tableExists := baselineDB.Tables[tableKey]
 
 			if !tableExists {
 				// New table
@@ -245,8 +247,8 @@ func CompareSchema(current, baseline []DatabaseSchema) []TableChanges {
 		}
 
 		// Check for removed tables
-		for _, oldTable := range baselineDB.Tables {
-			if _, exists := currentDB.Tables[oldTable.Name]; !exists {
+		for tableKey, oldTable := range baselineDB.Tables {
+			if _, exists := currentDB.Tables[tableKey]; !exists {
 				tableChanges = append(tableChanges, TableChanges{
 					Database: dbName,
 					Schema:   oldTable.Schema,
