@@ -218,8 +218,16 @@ func CompareSchema(current, baseline []DatabaseSchema) []TableChanges {
 			continue
 		}
 
+		// Track which tables we've processed to avoid duplicates
+		processedTables := make(map[string]bool)
+
 		// Check for added/modified tables
 		for tableKey, currentTable := range currentDB.Tables {
+			if processedTables[tableKey] {
+				continue
+			}
+			processedTables[tableKey] = true
+
 			baselineTable, tableExists := baselineDB.Tables[tableKey]
 
 			if !tableExists {
@@ -248,6 +256,11 @@ func CompareSchema(current, baseline []DatabaseSchema) []TableChanges {
 
 		// Check for removed tables
 		for tableKey, oldTable := range baselineDB.Tables {
+			if processedTables[tableKey] {
+				continue
+			}
+			processedTables[tableKey] = true
+
 			if _, exists := currentDB.Tables[tableKey]; !exists {
 				tableChanges = append(tableChanges, TableChanges{
 					Database: dbName,
