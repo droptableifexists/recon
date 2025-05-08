@@ -11,6 +11,13 @@ CREATE TABLE products (
     unit_price DECIMAL(10, 2) NOT NULL CHECK (unit_price >= 0)
 );
 
+-- Create customers table
+CREATE TABLE customers (
+    customer_id BIGINT PRIMARY KEY,
+    first_name VARCHAR(50) NOT NULL,
+    email VARCHAR(100) NOT NULL UNIQUE
+);
+
 -- Create orders table with foreign key to customers
 CREATE TABLE orders (
     order_id BIGINT PRIMARY KEY,
@@ -20,14 +27,11 @@ CREATE TABLE orders (
     CONSTRAINT fk_order_customer FOREIGN KEY (customer_id) REFERENCES customers (customer_id) ON DELETE RESTRICT
 );
 
--- Create index on orders.customer_id for faster lookups
-CREATE INDEX idx_orders_customer ON orders (customer_id);
+
+ALTER TABLE orders
+ADD CONSTRAINT fk_customer
+FOREIGN KEY (customer_id)   
+REFERENCES customers(customer_id);
 
 -- Reset search path
 SET search_path TO public;
-
-CREATE TABLE not_a_table (
-    customer_id BIGINT PRIMARY KEY,
-    first_name VARCHAR(50) NOT NULL,
-    email VARCHAR(100) NOT NULL UNIQUE
-);
