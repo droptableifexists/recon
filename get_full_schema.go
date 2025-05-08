@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"os"
 	"reflect"
@@ -208,70 +209,36 @@ func getConstraints(db *sql.DB, schema string, table string) ([]ConstraintSchema
 
 func CompareSchema(current, baseline []DatabaseSchema) []TableChanges {
 	var tableChanges []TableChanges
-	old := getDatabaseSchemaMap(baseline)
-	new := getDatabaseSchemaMap(current)
+	currentDB := getDatabaseSchemaMap(current)
+	baselineDB := getDatabaseSchemaMap(baseline)
 
-	// Compare tables in each database
-	for dbName, currentDB := range new {
-		baselineDB, exists := old[dbName]
-		if !exists {
+	for _, currentDB := range currentDB {
+		if baselineDB, exists := baselineDB[currentDB.Database]; !exists {
 			continue
-		}
-
-		// Track which tables we've processed to avoid duplicates
-		processedTables := make(map[string]bool)
-
-		// Check for added/modified tables
-		for tableKey, currentTable := range currentDB.Tables {
-			if processedTables[tableKey] {
-				continue
-			}
-			processedTables[tableKey] = true
-
-			baselineTable, tableExists := baselineDB.Tables[tableKey]
-
-			if !tableExists {
-				// New table
-				tableChanges = append(tableChanges, TableChanges{
-					Database: dbName,
-					Schema:   currentTable.Schema,
-					Table:    currentTable.Name,
-					New:      &currentTable,
-				})
-				continue
-			}
-
-			// Compare existing table
-			// If tables are not equal, store both old and new states
-			if !reflect.DeepEqual(baselineTable, currentTable) {
-				tableChanges = append(tableChanges, TableChanges{
-					Database: dbName,
-					Schema:   currentTable.Schema,
-					Table:    currentTable.Name,
-					Old:      &baselineTable,
-					New:      &currentTable,
-				})
-			}
-		}
-
-		// Check for removed tables
-		for tableKey, oldTable := range baselineDB.Tables {
-			if processedTables[tableKey] {
-				continue
-			}
-			processedTables[tableKey] = true
-
-			if _, exists := currentDB.Tables[tableKey]; !exists {
-				tableChanges = append(tableChanges, TableChanges{
-					Database: dbName,
-					Schema:   oldTable.Schema,
-					Table:    oldTable.Name,
-					Old:      &oldTable,
-				})
+		} else {
+			for _, currentTable := range currentDB.Tables {
+				if baselineTable, exists := baselineDB.Tables[currentTable.Name]; !exists {
+					continue
+				} else {
+					jsonCurrent, _ := json.Marshal(currentTable)
+					jsonBaseline, _ := json.Marshal(baselineTable)
+					fmt.Println(string(jsonCurrent))
+					fmt.Println(string(jsonBaseline))
+					if reflect.DeepEqual(currentTable, baselineTable) {
+						continue
+					} else {
+						tableChanges = append(tableChanges, TableChanges{
+							Database: currentDB.Database,
+							Schema:   currentTable.Schema,
+							Table:    currentTable.Name,
+							Old:      &baselineTable,
+							New:      &currentTable,
+						})
+					}
+				}
 			}
 		}
 	}
-
 	return tableChanges
 }
 
