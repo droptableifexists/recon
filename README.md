@@ -1,4 +1,4 @@
-# reconnaissance
+# recon
 Github action for tracking queries executed by tests via postrges wire protocol
 
 ## Usage
