@@ -225,9 +225,9 @@ func CompareSchema(current, baseline []DatabaseSchema) []TableChanges {
 					} else {
 						jsonCurrent, _ := json.Marshal(currentTable)
 						jsonBaseline, _ := json.Marshal(baselineTable)
-						fmt.Print("currentTable: \n")
+						fmt.Print("\n currentTable: \n")
 						fmt.Print(string(jsonCurrent))
-						fmt.Print("baselineTable: \n")
+						fmt.Print("\n baselineTable: \n")
 						fmt.Print(string(jsonBaseline))
 						tableChanges = append(tableChanges, TableChanges{
 							Database: currentDB.Database,
