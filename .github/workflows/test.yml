@@ -54,6 +54,10 @@ jobs:
 
       proxy:
         image: ghcr.io/${{ github.repository_owner }}/sql-proxy:latest
+        env:
+          LISTEN_PORT: 5433
+          BACKEND_HOST: postgres
+          BACKEND_PORT: 5432
         ports:
           - 5433:5433
           - 8080:8080

@@ -1,11 +1,21 @@
 FROM golang:1.21
 
+# Build arguments
+ARG LISTEN_PORT=5433
+ARG BACKEND_HOST=postgres
+ARG BACKEND_PORT=5432
+
+# Environment variables
+ENV LISTEN_PORT=${LISTEN_PORT}
+ENV BACKEND_HOST=${BACKEND_HOST}
+ENV BACKEND_PORT=${BACKEND_PORT}
+
 WORKDIR /app
 COPY . .
 
 RUN go build -o proxy .
 
-EXPOSE 5433 8080
+EXPOSE ${LISTEN_PORT} 8080
 
 RUN ls -la /app
 
