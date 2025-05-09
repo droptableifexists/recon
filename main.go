@@ -287,5 +287,6 @@ func escapeMultiline(input string) string {
 	s := strings.ReplaceAll(input, "%", "%25")
 	s = strings.ReplaceAll(s, "\n", "%0A")
 	s = strings.ReplaceAll(s, "\r", "%0D")
+	fmt.Print("s: ", s)
 	return s
 }
