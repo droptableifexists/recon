@@ -1,4 +1,4 @@
-module github.com/kev1nkrug3r/reconnaissance/schema_test
+module github.com/droptableifexists/reconnaissance/schema_test
 
 go 1.21.3
 

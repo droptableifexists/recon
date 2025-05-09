@@ -7,8 +7,8 @@ import (
 	"net"
 	"os"
 
-	"github.com/kev1nkrug3r/reconnaissance/sql-proxy/api"
-	"github.com/kev1nkrug3r/reconnaissance/sql-proxy/store"
+	"github.com/droptableifexists/reconnaissance/sql-proxy/api"
+	"github.com/droptableifexists/reconnaissance/sql-proxy/store"
 )
 
 func main() {
