@@ -5,16 +5,22 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
 
 	"github.com/kev1nkrug3r/reconnaissance/sql-proxy/api"
 	"github.com/kev1nkrug3r/reconnaissance/sql-proxy/store"
 )
 
 func main() {
+	// Get configuration from environment variables with defaults
+	listenPort := getEnv("LISTEN_PORT", "5433")
+	backendHost := getEnv("BACKEND_HOST", "postgres")
+	backendPort := getEnv("BACKEND_PORT", "5432")
+
 	// The address on which our proxy listens
-	listenAddr := ":5433"
+	listenAddr := ":" + listenPort
 	// The actual Postgres server address
-	backendAddr := "postgres:5432"
+	backendAddr := backendHost + ":" + backendPort
 
 	qs := store.MakeQueryStore()
 	a := api.MakeQueriesExecutedAPI(qs)
@@ -84,4 +90,13 @@ func proxyData(src net.Conn, dst net.Conn, qs *store.QueryStore) {
 			return
 		}
 	}
+}
+
+// Helper function to get environment variables with defaults
+func getEnv(key, defaultValue string) string {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
+	return value
 }
