@@ -80,6 +80,7 @@ jobs:
         uses: ./
         id: get-sql-data
         env:
+          DB_CONNECTION_STRING: host=postgres port=5432 user=postgres password=postgres dbname=postgres sslmode=disable
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
