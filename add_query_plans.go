@@ -11,8 +11,7 @@ type QueryWithPlan struct {
 	Plan  string
 }
 
-func AddQueryPlansForChanges(queries []Query) []QueryWithPlan {
-	connStr := "host=postgres port=5432 user=postgres password=postgres dbname=postgres sslmode=disable"
+func AddQueryPlansForChanges(connStr string, queries []Query) []QueryWithPlan {
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to open database: %v\n", err)
