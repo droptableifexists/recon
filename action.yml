@@ -1,5 +1,9 @@
 name: "Watch SQL Queries"
 description: "This action watches traffic to the database to record what SQL queries are executed."
+inputs:
+  db-connection-string:
+    description: "The connection string to the database"
+    required: true
 outputs:
   sql-queries:
     description: "A list of all the sql queries executed."
