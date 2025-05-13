@@ -19,6 +19,11 @@ Github action for tracking queries executed by tests via postrges wire protocol
 
       proxy:
         image: ghcr.io/droptableifexists/sql-proxy:latest
+        env:
+          LISTEN_PORT: 5433
+          BACKEND_HOST: postgres
+          BACKEND_PORT: 5432
+          API_PORT: 8080
         ports:
           - 5433:5433
           - 8080:8080

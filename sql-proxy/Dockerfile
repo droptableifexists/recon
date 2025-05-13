@@ -17,6 +17,4 @@ RUN go build -o proxy .
 
 EXPOSE ${LISTEN_PORT} 8080
 
-RUN ls -la /app
-
 CMD ["./proxy"]

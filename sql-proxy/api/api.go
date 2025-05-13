@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 
 	"github.com/droptableifexists/reconnaissance/sql-proxy/store"
 )
@@ -28,5 +29,6 @@ func (api QueriesExecutedAPI) RunApi() {
 	})
 
 	// Start the server on port 8080
-	http.ListenAndServe(":8080", nil)
+	apiPort := os.Getenv("API_PORT")
+	http.ListenAndServe(":"+apiPort, nil)
 }

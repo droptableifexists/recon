@@ -49,7 +49,8 @@ type ConstraintDiff struct {
 
 func main() {
 	// Call the proxy's API
-	resp, err := http.Get("http://proxy:8080/queries")
+	apiPort := os.Getenv("SQL_PROXY_API_PORT")
+	resp, err := http.Get("http://proxy:" + apiPort + "/queries")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to call proxy API: %v\n", err)
 		os.Exit(1)
