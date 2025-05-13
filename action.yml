@@ -1,7 +1,7 @@
 name: "Watch SQL Queries"
 description: "This action watches traffic to the database to record what SQL queries are executed."
 inputs:
-  SQL_PROXY_API_PORT:
+  SQL_PROXY_API_ADDRESS:
     description: "The port on which the sql proxy api is running"
     required: true
   DB_CONNECTION_STRING:
@@ -29,7 +29,7 @@ runs:
   using: "docker"
   image: "Dockerfile"
   env:
-    SQL_PROXY_API_PORT: ${{ inputs.SQL_PROXY_API_PORT }}
+    SQL_PROXY_API_ADDRESS: ${{ inputs.SQL_PROXY_API_ADDRESS }}
     DB_CONNECTION_STRING: ${{ inputs.DB_CONNECTION_STRING }}
     DEFAULT_DATABASE: ${{ inputs.DEFAULT_DATABASE }}
     GITHUB_REPOSITORY: ${{ inputs.GITHUB_REPOSITORY }}
