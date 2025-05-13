@@ -19,18 +19,28 @@ inputs:
 outputs:
   sql-queries:
     description: "A list of all the sql queries executed."
+    value: ${{ steps.get-sql-data.outputs.sql-queries }}
   queries-diff:
     description: "A diff of SQL executed"
+    value: ${{ steps.get-sql-data.outputs.queries-diff }}
   schema:
     description: "The full schema of the database"
+    value: ${{ steps.get-sql-data.outputs.schema }}
   schema-diff:
     description: "A diff of the database schema"
+    value: ${{ steps.get-sql-data.outputs.schema-diff }}
 runs:
-  using: "docker"
-  image: "Dockerfile"
-  env:
-    SQL_PROXY_API_ADDRESS: ${{ inputs.SQL_PROXY_API_ADDRESS }}
-    DB_CONNECTION_STRING: ${{ inputs.DB_CONNECTION_STRING }}
-    DEFAULT_DATABASE: ${{ inputs.DEFAULT_DATABASE }}
-    GITHUB_REPOSITORY: ${{ inputs.GITHUB_REPOSITORY }}
-    GITHUB_TOKEN: ${{ inputs.GITHUB_TOKEN }}
+  using: "composite"
+  steps:
+    - name: Run recon
+      id: get-sql-data
+      shell: bash
+      env:
+        SQL_PROXY_API_ADDRESS: ${{ inputs.SQL_PROXY_API_ADDRESS }}
+        DB_CONNECTION_STRING: ${{ inputs.DB_CONNECTION_STRING }}
+        DEFAULT_DATABASE: ${{ inputs.DEFAULT_DATABASE }}
+        GITHUB_REPOSITORY: ${{ inputs.GITHUB_REPOSITORY }}
+        GITHUB_TOKEN: ${{ inputs.GITHUB_TOKEN }}
+      run: |
+        chmod +x ./recon
+        ./recon
