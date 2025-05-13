@@ -93,51 +93,12 @@ func main() {
 
 	schemaBaseline := getArtifactFromMain("full-schema")
 	fmt.Fprintf(os.Stdout, "schemaBaseline: %s\n", schemaBaseline)
+	if schemaBaseline == "" {
+		schemaBaseline = "[]"
+	}
 
 	// Parse the baseline schema from JSON string
 	var baselineSchema []DatabaseSchema
-
-	// Handle empty baseline case
-	if schemaBaseline == "" {
-		fmt.Fprintf(os.Stderr, "No baseline schema found, treating all current schema as new\n")
-		// Create a diff where everything is new
-		schemaDiff := make([]TableChanges, 0)
-		for _, db := range databaseSchema {
-			for _, table := range db.Tables {
-				diff := TableChanges{
-					Database: db.Database,
-					Schema:   table.Schema,
-					Table:    table.Name,
-					New:      &table,
-				}
-				schemaDiff = append(schemaDiff, diff)
-			}
-		}
-		schemaDiffJSON, err := json.Marshal(schemaDiff)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to marshal schema diff: %v\n", err)
-			os.Exit(1)
-		}
-		// Write to GITHUB_OUTPUT
-		outputPath := os.Getenv("GITHUB_OUTPUT")
-		if outputPath == "" {
-			fmt.Fprintf(os.Stderr, "GITHUB_OUTPUT not set\n")
-			os.Exit(1)
-		}
-
-		output := fmt.Sprintf("sql-queries=%s\nqueries-diff=%s\nschema=%s\nschema-diff=%s\n",
-			escapeMultiline(string(body)),
-			escapeMultiline(string(queryWithPlansJSON)),
-			escapeMultiline(string(schemaJSON)),
-			escapeMultiline(string(schemaDiffJSON)))
-		if err := os.WriteFile(outputPath, []byte(output), 0644); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to write GITHUB_OUTPUT: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Println("Successfully wrote queries, diff, and schema to GITHUB_OUTPUT.")
-		return
-	}
-
 	if err := json.Unmarshal([]byte(schemaBaseline), &baselineSchema); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to parse baseline schema: %v\n", err)
 		os.Exit(1)
