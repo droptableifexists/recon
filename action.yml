@@ -28,3 +28,9 @@ outputs:
 runs:
   using: "docker"
   image: "Dockerfile"
+  env:
+    SQL_PROXY_API_PORT: ${{ inputs.SQL_PROXY_API_PORT }}
+    DB_CONNECTION_STRING: ${{ inputs.DB_CONNECTION_STRING }}
+    DEFAULT_DATABASE: ${{ inputs.DEFAULT_DATABASE }}
+    GITHUB_REPOSITORY: ${{ inputs.GITHUB_REPOSITORY }}
+    GITHUB_TOKEN: ${{ inputs.GITHUB_TOKEN }}
