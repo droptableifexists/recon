@@ -32,11 +32,8 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - name: Checkout binary
+    - name: Checkout
       uses: actions/checkout@v4
-      with:
-        sparse-checkout: recon
-        sparse-checkout-cone-mode: false
 
     - name: Run recon
       id: get-sql-data
