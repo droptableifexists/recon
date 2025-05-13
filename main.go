@@ -92,16 +92,11 @@ func main() {
 	}
 
 	schemaBaseline := getArtifactFromMain("full-schema")
-	fmt.Fprintf(os.Stdout, "schemaBaseline: %s\n", schemaBaseline)
-	if schemaBaseline == "" {
-		schemaBaseline = "[]"
-	}
 
 	// Parse the baseline schema from JSON string
 	var baselineSchema []DatabaseSchema
 	if err := json.Unmarshal([]byte(schemaBaseline), &baselineSchema); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to parse baseline schema: %v\n", err)
-		os.Exit(1)
+		baselineSchema = []DatabaseSchema{}
 	}
 
 	schemaDiff := CompareSchema(databaseSchema, baselineSchema)
