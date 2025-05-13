@@ -5,6 +5,4 @@ COPY . .
 
 RUN go build -o recon .
 
-RUN pwd
-
-CMD ["pwd"]
+CMD ["./recon"]
