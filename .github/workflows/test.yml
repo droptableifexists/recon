@@ -81,7 +81,7 @@ jobs:
         uses: ./
         id: get-sql-data
         with:
-          SQL_PROXY_API_ADDRESS: proxy:8080
+          SQL_PROXY_API_ADDRESS: localhost:8080
           DB_CONNECTION_STRING: host=postgres port=5432 user=postgres password=postgres sslmode=disable
           DEFAULT_DATABASE: postgres
           GITHUB_REPOSITORY: ${{ github.repository }}
