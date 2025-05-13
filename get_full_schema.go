@@ -112,7 +112,7 @@ func getTables(connectionString string, database string) (map[string]TableSchema
 		FROM
 			information_schema.columns
 		WHERE
-			table_schema NOT IN ('pg_catalog', 'information_schema')`,
+			table_schema NOT IN ('pg_catalog', 'information_schema', 'crdb_internal')`,
 	)
 	if err != nil {
 		return nil, err
