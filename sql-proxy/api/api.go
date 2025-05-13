@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/droptableifexists/reconnaissance/sql-proxy/store"
+	"github.com/droptableifexists/recon/sql-proxy/store"
 )
 
 type QueriesExecutedAPI struct {

@@ -1,4 +1,4 @@
-module github.com/droptableifexists/reconnaissance
+module github.com/droptableifexists/recon
 
 go 1.21.3
 

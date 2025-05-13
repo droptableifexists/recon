@@ -36,7 +36,7 @@ Github action for tracking queries executed by tests via postrges wire protocol
           cd tests
           go run .
       - name: Get SQL data
-        uses: droptableifexists/reconnaissance@main
+        uses: droptableifexists/recon@main
         id: get-sql-data
       - name: Save queries to file
         run: |
