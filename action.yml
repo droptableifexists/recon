@@ -1,11 +1,20 @@
 name: "Watch SQL Queries"
 description: "This action watches traffic to the database to record what SQL queries are executed."
 inputs:
-  db-connection-string:
+  SQL_PROXY_API_PORT:
+    description: "The port on which the sql proxy api is running"
+    required: true
+  DB_CONNECTION_STRING:
     description: "The connection string to the database"
     required: true
-  sql-proxy-api-port:
-    description: "The port on which the sql proxy api is running"
+  DEFAULT_DATABASE:
+    description: "The default database to use"
+    required: true
+  GITHUB_REPOSITORY:
+    description: "The github repository to use"
+    required: true
+  GITHUB_TOKEN:
+    description: "The github token to use"
     required: true
 outputs:
   sql-queries:
