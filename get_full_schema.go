@@ -74,7 +74,8 @@ func GetDatabaseSchema(connectionString string) []DatabaseSchema {
 }
 
 func getDatabases(connectionString string) ([]string, error) {
-	connectionString = fmt.Sprintf("%s dbname=postgres", connectionString)
+	defaultDatabase := os.Getenv("DEFAULT_DATABASE")
+	connectionString = fmt.Sprintf("%s dbname=%s", connectionString, defaultDatabase)
 	db, err := sql.Open("postgres", connectionString)
 	if err != nil {
 		return nil, err

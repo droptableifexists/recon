@@ -68,7 +68,10 @@ func main() {
 	// Generate JSON diff
 	queryDiff := diffQueries(string(body), queriesBaseline)
 
-	queryWithPlans := AddQueryPlansForChanges(queryDiff)
+	connStr := os.Getenv("DB_CONNECTION_STRING")
+	database := os.Getenv("DEFAULT_DATABASE")
+	connStr = fmt.Sprintf("%s dbname=%s", connStr, database)
+	queryWithPlans := AddQueryPlansForChanges(connStr, queryDiff)
 
 	queryWithPlansJSON, err := json.Marshal(queryWithPlans)
 	if err != nil {
@@ -79,8 +82,7 @@ func main() {
 	fmt.Print(string(queryWithPlansJSON))
 
 	// Generate schema SQL
-	connStr := "host=postgres port=5432 user=postgres password=postgres dbname=postgres sslmode=disable"
-	databaseSchema := GetDatabaseSchema(connStr)
+	databaseSchema := GetDatabaseSchema(os.Getenv("DB_CONNECTION_STRING"))
 	schemaJSON, err := json.Marshal(databaseSchema)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to marshal database schema: %v\n", err)
