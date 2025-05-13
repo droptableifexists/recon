@@ -32,8 +32,11 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - name: Checkout
+    - name: Checkout action repository
       uses: actions/checkout@v4
+      with:
+        repository: ${{ github.action_repository }}
+        ref: ${{ github.action_ref }}
 
     - name: Run recon
       id: get-sql-data
