@@ -1,9 +1,9 @@
 FROM golang:1.21
 
-WORKDIR /github/workspace
+WORKDIR /app
 
 COPY . .
 
 RUN go build -o recon .
 
-CMD ["ls"]
+ENTRYPOINT ["/app/recon"]
