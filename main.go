@@ -95,7 +95,7 @@ func main() {
 
 	// Parse the baseline schema from JSON string
 	var baselineSchema []DatabaseSchema
-	fmt.Println("schemaBaseline", schemaBaseline)
+	fmt.Fprintf(os.Stdout, "schemaBaseline: %s\n", schemaBaseline)
 	if err := json.Unmarshal([]byte(schemaBaseline), &baselineSchema); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to parse baseline schema: %v\n", err)
 		os.Exit(1)
