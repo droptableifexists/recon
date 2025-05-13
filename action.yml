@@ -19,8 +19,12 @@ inputs:
 outputs:
   sql-queries:
     description: "A list of all the sql queries executed."
-  diff:
+  queries-diff:
     description: "A diff of SQL executed"
+  schema:
+    description: "The full schema of the database"
+  schema-diff:
+    description: "A diff of the database schema"
 runs:
   using: "docker"
   image: "Dockerfile"
