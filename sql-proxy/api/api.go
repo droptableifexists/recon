@@ -29,6 +29,6 @@ func (api QueriesExecutedAPI) RunApi() {
 	})
 
 	// Start the server on port 8080
-	apiPort := os.Getenv("API_PORT")
+	apiPort := os.Getenv("SQL_PROXY_API_PORT")
 	http.ListenAndServe(":"+apiPort, nil)
 }
