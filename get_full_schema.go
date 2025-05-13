@@ -106,14 +106,15 @@ func getTables(connectionString string, database string) (map[string]TableSchema
 	}
 	defer db.Close()
 
-	rows, err := db.Query(
-		`SELECT
-			table_schema, table_name, column_name, data_type, is_nullable
-		FROM
-			information_schema.columns
-		WHERE
-			table_schema NOT IN ('pg_catalog', 'information_schema', 'crdb_internal')`,
-	)
+	sql := `SELECT
+		table_schema, table_name, column_name, data_type, is_nullable
+	FROM
+		information_schema.columns
+	WHERE
+		table_schema NOT IN ('pg_catalog', 'information_schema', 'crdb_internal')`
+
+	fmt.Println(sql)
+	rows, err := db.Query(sql)
 	if err != nil {
 		return nil, err
 	}
