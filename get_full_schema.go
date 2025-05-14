@@ -111,7 +111,7 @@ func getTables(connectionString string, database string) (map[string]TableSchema
 	FROM
 		information_schema.columns
 	WHERE
-		table_schema NOT IN ('pg_catalog', 'information_schema', 'crdb_internal')`
+		table_schema NOT IN ('pg_catalog', 'information_schema', 'crdb_internal', 'pg_extension', 'system')`
 
 	fmt.Print(sql)
 	rows, err := db.Query(sql)
