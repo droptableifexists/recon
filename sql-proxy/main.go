@@ -46,8 +46,13 @@ func main() {
 			log.Printf("Failed to accept connection: %v", err)
 			continue
 		}
+		passThroughConn, err := passThroughListener.Accept()
+		if err != nil {
+			log.Printf("Failed to accept connection: %v", err)
+			continue
+		}
 		go handleClient(clientConn, backendAddr, qs)
-		go handlePassThrough(clientConn, backendAddr)
+		go handlePassThrough(passThroughConn, backendAddr)
 	}
 }
 
