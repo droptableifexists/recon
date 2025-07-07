@@ -51,13 +51,15 @@ func main() {
 			log.Printf("Failed to accept connection: %v", err)
 			continue
 		}
-		go handleClient(clientConn, backendAddr, qs)
-		go handlePassThrough(passThroughConn, backendAddr)
+		go handleClient(clientConn, passThroughConn, backendAddr, qs)
 	}
 }
 
-func handleClient(clientConn net.Conn, backendAddr string, qs *store.QueryStore) {
-	defer clientConn.Close()
+func handleClient(clientConn net.Conn, passThroughConn net.Conn, backendAddr string, qs *store.QueryStore) {
+	defer func() {
+		clientConn.Close()
+		passThroughConn.Close()
+	}()
 
 	// Connect to the backend (Postgres server)
 	backendConn, err := net.Dial("tcp", backendAddr)
@@ -69,25 +71,11 @@ func handleClient(clientConn net.Conn, backendAddr string, qs *store.QueryStore)
 
 	// Proxy data from client to backend
 	go listenAndProxyData(clientConn, backendConn, qs)
+	go dontListenAndProxyData(passThroughConn, backendConn)
 	// Proxy data from backend to client
+	go dontListenAndProxyData(backendConn, passThroughConn)
 	listenAndProxyData(backendConn, clientConn, qs)
-}
 
-func handlePassThrough(clientConn net.Conn, backendAddr string) {
-	defer clientConn.Close()
-
-	// Connect to the backend (Postgres server)
-	backendConn, err := net.Dial("tcp", backendAddr)
-	if err != nil {
-		log.Printf("Failed to connect to backend: %v", err)
-		return
-	}
-	defer backendConn.Close()
-
-	// Proxy data from client to backend
-	go dontListenAndProxyData(clientConn, backendConn)
-	// Proxy data from backend to client
-	dontListenAndProxyData(backendConn, clientConn)
 }
 
 // listenAndProxyData forwards data between two connections
