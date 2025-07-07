@@ -17,27 +17,37 @@ func main() {
 	backendHost := getEnv("BACKEND_HOST", "postgres")
 	backendPort := getEnv("BACKEND_PORT", "5432")
 	passThroughPort := getEnv("PASS_THROUGH_PORT", "5434")
+
 	// The address on which our proxy listens
 	listenAddr := ":" + listenPort
 	// The actual Postgres server address
 	backendAddr := backendHost + ":" + backendPort
 	// port to pass through to the original Postgres server
 	passThroughAddr := ":" + passThroughPort
+
 	qs := store.MakeQueryStore()
 	a := api.MakeQueriesExecutedAPI(qs)
 	go a.RunApi()
+
+	// Start the monitored proxy (with query interception)
+	go startMonitoredProxy(listenAddr, backendAddr, qs)
+
+	// Start the passthrough proxy (no interception)
+	go startPassthroughProxy(passThroughAddr, backendAddr)
+
+	// Keep the main goroutine alive
+	select {}
+}
+
+func startMonitoredProxy(listenAddr, backendAddr string, qs *store.QueryStore) {
 	// Listen for incoming client connections
 	listener, err := net.Listen("tcp", listenAddr)
 	if err != nil {
-		log.Fatalf("Failed to listen: %v", err)
-	}
-	passThroughListener, err := net.Listen("tcp", passThroughAddr)
-	if err != nil {
-		log.Fatalf("Failed to listen: %v", err)
+		log.Printf("Failed to listen on monitored port: %v", err)
+		return
 	}
 	defer listener.Close()
-	defer passThroughListener.Close()
-	fmt.Printf("Proxy listening on %s, forwarding to %s\n", listenAddr, backendAddr)
+	fmt.Printf("Monitored proxy listening on %s, forwarding to %s\n", listenAddr, backendAddr)
 
 	// Handle incoming client connections
 	for {
@@ -46,20 +56,33 @@ func main() {
 			log.Printf("Failed to accept connection: %v", err)
 			continue
 		}
-		passThroughConn, err := passThroughListener.Accept()
+		go handleMonitoredClient(clientConn, backendAddr, qs)
+	}
+}
+
+func startPassthroughProxy(listenAddr, backendAddr string) {
+	// Listen for incoming client connections
+	listener, err := net.Listen("tcp", listenAddr)
+	if err != nil {
+		log.Printf("Failed to listen on passthrough port: %v", err)
+		return
+	}
+	defer listener.Close()
+	fmt.Printf("Passthrough proxy listening on %s, forwarding to %s\n", listenAddr, backendAddr)
+
+	// Handle incoming client connections
+	for {
+		clientConn, err := listener.Accept()
 		if err != nil {
 			log.Printf("Failed to accept connection: %v", err)
 			continue
 		}
-		go handleClient(clientConn, passThroughConn, backendAddr, qs)
+		go handlePassthroughClient(clientConn, backendAddr)
 	}
 }
 
-func handleClient(clientConn net.Conn, passThroughConn net.Conn, backendAddr string, qs *store.QueryStore) {
-	defer func() {
-		clientConn.Close()
-		passThroughConn.Close()
-	}()
+func handleMonitoredClient(clientConn net.Conn, backendAddr string, qs *store.QueryStore) {
+	defer clientConn.Close()
 
 	// Connect to the backend (Postgres server)
 	backendConn, err := net.Dial("tcp", backendAddr)
@@ -71,11 +94,25 @@ func handleClient(clientConn net.Conn, passThroughConn net.Conn, backendAddr str
 
 	// Proxy data from client to backend
 	go listenAndProxyData(clientConn, backendConn, qs)
-	go dontListenAndProxyData(passThroughConn, backendConn)
 	// Proxy data from backend to client
-	go dontListenAndProxyData(backendConn, passThroughConn)
 	listenAndProxyData(backendConn, clientConn, qs)
+}
 
+func handlePassthroughClient(clientConn net.Conn, backendAddr string) {
+	defer clientConn.Close()
+
+	// Connect to the backend (Postgres server)
+	backendConn, err := net.Dial("tcp", backendAddr)
+	if err != nil {
+		log.Printf("Failed to connect to backend: %v", err)
+		return
+	}
+	defer backendConn.Close()
+
+	// Proxy data from client to backend (no processing)
+	go dontListenAndProxyData(clientConn, backendConn)
+	// Proxy data from backend to client (no processing)
+	dontListenAndProxyData(backendConn, clientConn)
 }
 
 // listenAndProxyData forwards data between two connections
