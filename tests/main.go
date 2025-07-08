@@ -102,23 +102,21 @@ func test_transaction() {
 	}
 	defer tx.Rollback()
 
-	rows, err := tx.Query("SELECT 1 as oneinatransaction;")
+	// Use Exec instead of Query for simple queries in transaction
+	_, err = tx.Exec("SELECT 1 as oneinatransaction;")
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer rows.Close()
 
-	rows, err = tx.Query("SELECT 2 as twoinatransaction;")
+	_, err = tx.Exec("SELECT 2 as twoinatransaction;")
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer rows.Close()
 
-	rows, err = tx.Query("SELECT 3 as threeinatransaction;")
+	_, err = tx.Exec("SELECT 3 as threeinatransaction;")
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer rows.Close()
 
 	err = tx.Commit()
 	if err != nil {
