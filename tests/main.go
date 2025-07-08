@@ -67,6 +67,8 @@ func main() {
 		}
 	}
 
+	test_transaction()
+
 	resp, err := http.Get("http://localhost:8080/queries")
 	if err != nil {
 		fmt.Println("Error calling /queries:", err)
@@ -82,4 +84,44 @@ func main() {
 
 	fmt.Println("Response from /queries:")
 	fmt.Println(string(body))
+}
+
+func test_transaction() {
+	connStr := "host=localhost port=5433 user=postgres password=postgres dbname=postgres sslmode=disable"
+	fmt.Printf("Connecting with: %s\n", connStr)
+
+	db, err := sql.Open("postgres", connStr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	tx, err := db.Begin()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer tx.Rollback()
+
+	rows, err := tx.Query("SELECT 1 as oneinatransaction;")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rows.Close()
+
+	rows, err = tx.Query("SELECT 2 as twoinatransaction;")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rows.Close()
+
+	rows, err = tx.Query("SELECT 3 as threeinatransaction;")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rows.Close()
+
+	err = tx.Commit()
+	if err != nil {
+		log.Fatal(err)
+	}
 }
