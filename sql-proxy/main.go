@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"slices"
 
 	"github.com/droptableifexists/recon/sql-proxy/api"
 	"github.com/droptableifexists/recon/sql-proxy/store"
@@ -126,7 +127,7 @@ func listenAndProxyData(src net.Conn, dst net.Conn, qs *store.QueryStore) {
 			return
 		}
 
-		if buffer[0] == 'Q' {
+		if slices.Contains([]byte{'Q', 'P', 'B', 'E'}, buffer[0]) {
 			queryBytes := bytes.Trim(buffer[1:n], "\x00")
 			rawDataString := string(queryBytes)
 			fmt.Print("\n Query Passing thru: \n")
