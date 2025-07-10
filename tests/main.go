@@ -144,7 +144,8 @@ func test_parameterized_transaction() {
 
 	// Test 1: Parameterized SELECT with single parameter
 	fmt.Println("Test 1: Parameterized SELECT with single parameter")
-	rows, err := tx.Query("SELECT $1 as param_value, $1 * 2 as doubled;", 42)
+	num := 42
+	rows, err := tx.Query("SELECT $1 as param_value, $1 * 2 as doubled;", num)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -161,7 +162,8 @@ func test_parameterized_transaction() {
 
 	// Test 2: Parameterized SELECT with multiple parameters
 	fmt.Println("Test 2: Parameterized SELECT with multiple parameters")
-	rows2, err := tx.Query("SELECT $1 as first, $2 as second, $3 as third, $1 + $2 + $3 as sum;", 10, 20, 30)
+	num1, num2, num3 := 10, 20, 30
+	rows2, err := tx.Query("SELECT $1 as first, $2 as second, $3 as third, $1 + $2 + $3 as sum;", num1, num2, num3)
 	if err != nil {
 		log.Fatal(err)
 	}
