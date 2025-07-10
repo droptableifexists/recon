@@ -66,7 +66,10 @@ func parseParseMessage(data []byte) (statementName, query string, err error) {
 
 // parseBindMessage extracts parameters from a Bind message
 func parseBindMessage(data []byte) (portalName, statementName string, params []interface{}, err error) {
-	// Bind message format: portal_name\0statement_name\0num_param_formats\0param_formats\0num_params\0param_lengths\0param_values
+	// Debug: Print the raw data
+	fmt.Printf("DEBUG: Bind message raw data (hex): %x\n", data)
+
+	// Find null-terminated strings
 	parts := bytes.Split(data, []byte{0})
 	if len(parts) < 2 {
 		return "", "", nil, fmt.Errorf("invalid bind message format")
@@ -74,60 +77,55 @@ func parseBindMessage(data []byte) (portalName, statementName string, params []i
 
 	portalName = string(parts[0])
 	statementName = string(parts[1])
-
-	// Debug: Print the raw data
-	fmt.Printf("DEBUG: Bind message raw data (hex): %x\n", data)
 	fmt.Printf("DEBUG: Portal: %s, Statement: %s\n", portalName, statementName)
 
-	// The PostgreSQL Bind message has a complex binary format
-	// Let's try a different approach - look for the parameter values directly in the binary data
+	// Calculate position after the null-terminated strings
+	pos := len(parts[0]) + 1 + len(parts[1]) + 1 // +1 for each null terminator
 
-	// Find the position after the null-terminated strings
-	pos := 0
-	for i := 0; i < 2; i++ { // Skip portal_name and statement_name
-		pos += len(parts[i]) + 1 // +1 for the null terminator
+	// Read number of parameter formats (2 bytes)
+	if pos+2 > len(data) {
+		return portalName, statementName, nil, fmt.Errorf("message too short for parameter formats")
+	}
+	numFormats := int(binary.BigEndian.Uint16(data[pos : pos+2]))
+	pos += 2
+	fmt.Printf("DEBUG: Number of parameter formats: %d\n", numFormats)
+
+	// Skip parameter formats (each format is 2 bytes)
+	pos += numFormats * 2
+
+	// Read number of parameters (2 bytes)
+	if pos+2 > len(data) {
+		return portalName, statementName, nil, fmt.Errorf("message too short for parameter count")
+	}
+	numParams := int(binary.BigEndian.Uint16(data[pos : pos+2]))
+	pos += 2
+	fmt.Printf("DEBUG: Number of parameters: %d\n", numParams)
+
+	// Read parameter lengths (each length is 4 bytes)
+	paramLengths := make([]int, numParams)
+	for i := 0; i < numParams; i++ {
+		if pos+4 > len(data) {
+			return portalName, statementName, nil, fmt.Errorf("message too short for parameter lengths")
+		}
+		paramLengths[i] = int(binary.BigEndian.Uint32(data[pos : pos+4]))
+		pos += 4
+		fmt.Printf("DEBUG: Parameter %d length: %d\n", i+1, paramLengths[i])
 	}
 
-	// Skip parameter format info
-	if pos < len(data) {
-		// Skip num_param_formats (2 bytes)
-		pos += 2
-	}
-
-	// Skip parameter formats if any
-	if pos < len(data) {
-		numFormats := int(binary.BigEndian.Uint16(data[pos-2 : pos]))
-		pos += numFormats * 2 // Each format is 2 bytes
-	}
-
-	// Read number of parameters
-	if pos+2 <= len(data) {
-		numParams := int(binary.BigEndian.Uint16(data[pos : pos+2]))
-		pos += 2
-
-		fmt.Printf("DEBUG: Number of parameters: %d\n", numParams)
-
-		// Skip parameter lengths
-		pos += numParams * 4 // Each length is 4 bytes
-
-		// Now read the actual parameter values
-		for i := 0; i < numParams && pos+4 <= len(data); i++ {
-			paramLength := int(binary.BigEndian.Uint32(data[pos : pos+4]))
-			pos += 4
-
-			if paramLength == -1 {
-				// NULL parameter
-				params = append(params, nil)
-				fmt.Printf("DEBUG: Parameter %d: NULL\n", i+1)
-			} else if pos+paramLength <= len(data) {
-				// Read the parameter value
-				paramValue := data[pos : pos+paramLength]
-				params = append(params, string(paramValue))
-				fmt.Printf("DEBUG: Parameter %d: %s (length: %d)\n", i+1, string(paramValue), paramLength)
-				pos += paramLength
-			} else {
-				fmt.Printf("DEBUG: Parameter %d: Invalid length %d at pos %d (data len: %d)\n", i+1, paramLength, pos, len(data))
-			}
+	// Read parameter values
+	for i := 0; i < numParams; i++ {
+		if paramLengths[i] == -1 {
+			// NULL parameter
+			params = append(params, nil)
+			fmt.Printf("DEBUG: Parameter %d: NULL\n", i+1)
+		} else if pos+paramLengths[i] <= len(data) {
+			// Read the parameter value
+			paramValue := data[pos : pos+paramLengths[i]]
+			params = append(params, string(paramValue))
+			fmt.Printf("DEBUG: Parameter %d: %s (length: %d)\n", i+1, string(paramValue), paramLengths[i])
+			pos += paramLengths[i]
+		} else {
+			fmt.Printf("DEBUG: Parameter %d: Invalid length %d at pos %d (data len: %d)\n", i+1, paramLengths[i], pos, len(data))
 		}
 	}
 
