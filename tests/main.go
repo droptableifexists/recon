@@ -145,7 +145,7 @@ func test_parameterized_transaction() {
 	// Test 1: Parameterized SELECT with single parameter
 	fmt.Println("Test 1: Parameterized SELECT with single parameter")
 	num := 42
-	rows, err := tx.Query("SELECT $1 as param_value, $1 * 2 as doubled;", num)
+	rows, err := tx.Query("SELECT $1::int as param_value, ($1::int) * 2 as doubled;", num)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func test_parameterized_transaction() {
 	// Test 2: Parameterized SELECT with multiple parameters
 	fmt.Println("Test 2: Parameterized SELECT with multiple parameters")
 	num1, num2, num3 := 10, 20, 30
-	rows2, err := tx.Query("SELECT $1 as first, $2 as second, $3 as third, $1 + $2 + $3 as sum;", num1, num2, num3)
+	rows2, err := tx.Query("SELECT $1::int as first, $2::int as second, $3::int as third, ($1::int) + ($2::int) + ($3::int) as sum;", num1, num2, num3)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -180,21 +180,21 @@ func test_parameterized_transaction() {
 
 	// Test 3: Parameterized INSERT (if we had a table, this would work)
 	fmt.Println("Test 3: Parameterized INSERT simulation")
-	_, err = tx.Exec("SELECT $1 as id, $2 as name, $3 as value;", 1, "test_item", 99.99)
+	_, err = tx.Exec("SELECT $1::int as id, $2::text as name, $3::numeric as value;", 1, "test_item", 99.99)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// Test 4: Parameterized UPDATE simulation
 	fmt.Println("Test 4: Parameterized UPDATE simulation")
-	_, err = tx.Exec("SELECT $1 as old_value, $2 as new_value, 'updated' as status;", 50, 100)
+	_, err = tx.Exec("SELECT $1::int as old_value, $2::int as new_value, 'updated' as status;", 50, 100)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// Test 5: Mixed parameterized and non-parameterized queries
 	fmt.Println("Test 5: Mixed parameterized and non-parameterized queries")
-	_, err = tx.Exec("SELECT 1 as constant, $1 as parameter;", "mixed_test")
+	_, err = tx.Exec("SELECT 1 as constant, $1::text as parameter;", "mixed_test")
 	if err != nil {
 		log.Fatal(err)
 	}
