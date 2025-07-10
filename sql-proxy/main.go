@@ -134,7 +134,7 @@ func formatParameterizedQuery(query string, params []interface{}) string {
 	for i, param := range params {
 		placeholder := fmt.Sprintf("$%d", i+1)
 		paramStr := fmt.Sprintf("%v", param)
-		result = strings.Replace(result, placeholder, paramStr, 1)
+		result = strings.ReplaceAll(result, placeholder, paramStr)
 	}
 	return result
 }
