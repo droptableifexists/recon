@@ -85,6 +85,9 @@ func parseBindMessage(data []byte) (portalName, statementName string, params []i
 	// Debug: Print the raw data
 	fmt.Printf("DEBUG: Bind message raw data (hex): %x\n", data)
 
+	// PostgreSQL Bind message format:
+	// portal_name\0statement_name\0num_param_formats\0param_formats\0num_params\0param_lengths\0param_values
+
 	// Find null-terminated strings
 	parts := bytes.Split(data, []byte{0})
 	if len(parts) < 2 {
@@ -96,7 +99,20 @@ func parseBindMessage(data []byte) (portalName, statementName string, params []i
 	fmt.Printf("DEBUG: Portal: %s, Statement: %s\n", portalName, statementName)
 
 	// Calculate position after the null-terminated strings
-	pos := len(parts[0]) + 1 + len(parts[1]) + 1 // +1 for each null terminator
+	pos := 0
+	// Skip portal_name (null-terminated)
+	for pos < len(data) && data[pos] != 0 {
+		pos++
+	}
+	pos++ // Skip the null terminator
+
+	// Skip statement_name (null-terminated)
+	for pos < len(data) && data[pos] != 0 {
+		pos++
+	}
+	pos++ // Skip the null terminator
+
+	fmt.Printf("DEBUG: Position after strings: %d\n", pos)
 
 	// Read number of parameter formats (2 bytes)
 	if pos+2 > len(data) {
