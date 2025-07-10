@@ -50,23 +50,6 @@ func getConnectionState(conn net.Conn) *ConnectionState {
 	return state
 }
 
-// parsePostgreSQLMessage parses a PostgreSQL protocol message
-func parsePostgreSQLMessage(data []byte) (messageType byte, content []byte, err error) {
-	if len(data) < 5 {
-		return 0, nil, fmt.Errorf("message too short")
-	}
-
-	messageType = data[0]
-	messageLength := binary.BigEndian.Uint32(data[1:5])
-
-	if len(data) < int(messageLength) {
-		return 0, nil, fmt.Errorf("incomplete message")
-	}
-
-	content = data[5:messageLength]
-	return messageType, content, nil
-}
-
 // parseParseMessage extracts the query from a Parse message
 func parseParseMessage(data []byte) (statementName, query string, err error) {
 	// Parse message format: statement_name\0query\0num_param_types
