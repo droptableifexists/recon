@@ -79,53 +79,17 @@ func parseBindMessage(data []byte) (portalName, statementName string, params []i
 	statementName = string(parts[1])
 	fmt.Printf("DEBUG: Portal: %s, Statement: %s\n", portalName, statementName)
 
-	// Calculate position after the null-terminated strings
-	pos := len(parts[0]) + 1 + len(parts[1]) + 1 // +1 for each null terminator
-
-	// Read number of parameter formats (2 bytes)
-	if pos+2 > len(data) {
-		return portalName, statementName, nil, fmt.Errorf("message too short for parameter formats")
-	}
-	numFormats := int(binary.BigEndian.Uint16(data[pos : pos+2]))
-	pos += 2
-	fmt.Printf("DEBUG: Number of parameter formats: %d\n", numFormats)
-
-	// Skip parameter formats (each format is 2 bytes)
-	pos += numFormats * 2
-
-	// Read number of parameters (2 bytes)
-	if pos+2 > len(data) {
-		return portalName, statementName, nil, fmt.Errorf("message too short for parameter count")
-	}
-	numParams := int(binary.BigEndian.Uint16(data[pos : pos+2]))
-	pos += 2
-	fmt.Printf("DEBUG: Number of parameters: %d\n", numParams)
-
-	// Read parameter lengths (each length is 4 bytes)
-	paramLengths := make([]int, numParams)
-	for i := 0; i < numParams; i++ {
-		if pos+4 > len(data) {
-			return portalName, statementName, nil, fmt.Errorf("message too short for parameter lengths")
-		}
-		paramLengths[i] = int(binary.BigEndian.Uint32(data[pos : pos+4]))
-		pos += 4
-		fmt.Printf("DEBUG: Parameter %d length: %d\n", i+1, paramLengths[i])
-	}
-
-	// Read parameter values
-	for i := 0; i < numParams; i++ {
-		if paramLengths[i] == -1 {
-			// NULL parameter
-			params = append(params, nil)
-			fmt.Printf("DEBUG: Parameter %d: NULL\n", i+1)
-		} else if pos+paramLengths[i] <= len(data) {
-			// Read the parameter value
-			paramValue := data[pos : pos+paramLengths[i]]
-			params = append(params, string(paramValue))
-			fmt.Printf("DEBUG: Parameter %d: %s (length: %d)\n", i+1, string(paramValue), paramLengths[i])
-			pos += paramLengths[i]
-		} else {
-			fmt.Printf("DEBUG: Parameter %d: Invalid length %d at pos %d (data len: %d)\n", i+1, paramLengths[i], pos, len(data))
+	// For now, let's try a simpler approach - look for parameter values in the remaining parts
+	// Skip the first two parts (portal_name and statement_name)
+	for i := 2; i < len(parts); i++ {
+		if len(parts[i]) > 0 {
+			// This might be a parameter value
+			paramStr := string(parts[i])
+			// Only add if it looks like a reasonable parameter value
+			if len(paramStr) > 0 && len(paramStr) < 100 {
+				params = append(params, paramStr)
+				fmt.Printf("DEBUG: Found parameter: %s\n", paramStr)
+			}
 		}
 	}
 
