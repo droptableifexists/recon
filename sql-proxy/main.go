@@ -81,51 +81,48 @@ func parseParseMessage(data []byte) (statementName, query string, err error) {
 }
 
 // parseBindMessage extracts parameters from a Bind message
+// Based on PostgreSQL protocol specification: https://www.postgresql.org/docs/current/protocol-message-formats.html
 func parseBindMessage(data []byte) (portalName, statementName string, params []interface{}, err error) {
 	// Debug: Print the raw data
 	fmt.Printf("DEBUG: Bind message raw data (hex): %x\n", data)
 
-	// PostgreSQL Bind message format:
-	// portal_name\0statement_name\0num_param_formats\0param_formats\0num_params\0param_lengths\0param_values
+	// PostgreSQL Bind message format (from official spec):
+	// Int32 - Length of message contents in bytes, including self
+	// String - Portal name (can be empty)
+	// String - Prepared statement name (can be empty)
+	// Int16 - Number of parameter format codes that follow (denoted C below)
+	// Int16[C] - The parameter format codes. Each must presently be zero (text) or one (binary)
+	// Int16 - Number of parameters that follow (denoted N below)
+	// Int32[N] - The length of the parameter value, in bytes (this count does not include itself). Can be zero. As a special case, -1 indicates a NULL parameter value. No value bytes follow in the NULL case.
+	// Byte[N] - The value of the parameter, in the format indicated by the associated format code. n is the above length.
+	// Int16 - Number of result-column format codes that follow (denoted R below)
+	// Int16[R] - The result-column format codes. Each must presently be zero (text) or one (binary)
 
-	// Find null-terminated strings
-	parts := bytes.Split(data, []byte{0})
-	if len(parts) < 2 {
-		return "", "", nil, fmt.Errorf("invalid bind message format")
-	}
-
-	portalName = string(parts[0])
-	statementName = string(parts[1])
-	fmt.Printf("DEBUG: Portal: %s, Statement: %s\n", portalName, statementName)
-
-	// Calculate position after the null-terminated strings
 	pos := 0
-	// Skip portal_name (null-terminated)
-	for pos < len(data) && data[pos] != 0 {
-		pos++
-	}
-	pos++ // Skip the null terminator
 
-	// Skip statement_name (null-terminated)
-	for pos < len(data) && data[pos] != 0 {
-		pos++
-	}
-	pos++ // Skip the null terminator
+	// Read portal name (null-terminated string)
+	portalName, pos = readNullTerminatedString(data, pos)
 
-	fmt.Printf("DEBUG: Position after strings: %d\n", pos)
+	// Read statement name (null-terminated string)
+	statementName, pos = readNullTerminatedString(data, pos)
 
-	// Read number of parameter formats (2 bytes)
+	fmt.Printf("DEBUG: Portal: '%s', Statement: '%s', Position: %d\n", portalName, statementName, pos)
+
+	// Read number of parameter format codes
 	if pos+2 > len(data) {
-		return portalName, statementName, nil, fmt.Errorf("message too short for parameter formats")
+		return portalName, statementName, nil, fmt.Errorf("message too short for parameter format count")
 	}
 	numFormats := int(binary.BigEndian.Uint16(data[pos : pos+2]))
 	pos += 2
 	fmt.Printf("DEBUG: Number of parameter formats: %d\n", numFormats)
 
-	// Skip parameter formats (each format is 2 bytes)
+	// Skip parameter format codes (each is 2 bytes)
+	if pos+numFormats*2 > len(data) {
+		return portalName, statementName, nil, fmt.Errorf("message too short for parameter formats")
+	}
 	pos += numFormats * 2
 
-	// Read number of parameters (2 bytes)
+	// Read number of parameters
 	if pos+2 > len(data) {
 		return portalName, statementName, nil, fmt.Errorf("message too short for parameter count")
 	}
@@ -133,38 +130,50 @@ func parseBindMessage(data []byte) (portalName, statementName string, params []i
 	pos += 2
 	fmt.Printf("DEBUG: Number of parameters: %d\n", numParams)
 
-	// Read parameter lengths (each length is 4 bytes)
-	paramLengths := make([]int, numParams)
+	// Read parameter lengths and values
 	for i := 0; i < numParams; i++ {
 		if pos+4 > len(data) {
-			return portalName, statementName, nil, fmt.Errorf("message too short for parameter lengths")
+			return portalName, statementName, nil, fmt.Errorf("message too short for parameter %d length", i+1)
 		}
-		// Read as signed int32 (PostgreSQL uses signed lengths)
+
+		// Read parameter length (signed int32)
 		paramLength := int(int32(binary.BigEndian.Uint32(data[pos : pos+4])))
-		paramLengths[i] = paramLength
 		pos += 4
 		fmt.Printf("DEBUG: Parameter %d length: %d\n", i+1, paramLength)
-	}
 
-	// Read parameter values
-	for i := 0; i < numParams; i++ {
-		if paramLengths[i] == -1 {
+		if paramLength == -1 {
 			// NULL parameter
 			params = append(params, nil)
 			fmt.Printf("DEBUG: Parameter %d: NULL\n", i+1)
-		} else if paramLengths[i] >= 0 && pos+paramLengths[i] <= len(data) {
-			// Read the parameter value
-			paramValue := data[pos : pos+paramLengths[i]]
+		} else if paramLength >= 0 {
+			if pos+paramLength > len(data) {
+				return portalName, statementName, nil, fmt.Errorf("message too short for parameter %d value", i+1)
+			}
+
+			// Read parameter value
+			paramValue := data[pos : pos+paramLength]
 			params = append(params, string(paramValue))
-			fmt.Printf("DEBUG: Parameter %d: %s (length: %d)\n", i+1, string(paramValue), paramLengths[i])
-			pos += paramLengths[i]
+			fmt.Printf("DEBUG: Parameter %d: '%s' (length: %d)\n", i+1, string(paramValue), paramLength)
+			pos += paramLength
 		} else {
-			fmt.Printf("DEBUG: Parameter %d: Invalid length %d at pos %d (data len: %d)\n", i+1, paramLengths[i], pos, len(data))
+			return portalName, statementName, nil, fmt.Errorf("invalid parameter %d length: %d", i+1, paramLength)
 		}
 	}
 
 	fmt.Printf("DEBUG: Extracted %d parameters: %v\n", len(params), params)
 	return portalName, statementName, params, nil
+}
+
+// readNullTerminatedString reads a null-terminated string from the data
+func readNullTerminatedString(data []byte, pos int) (string, int) {
+	start := pos
+	for pos < len(data) && data[pos] != 0 {
+		pos++
+	}
+	if pos < len(data) {
+		pos++ // Skip the null terminator
+	}
+	return string(data[start : pos-1]), pos
 }
 
 // formatParameterizedQuery combines a query with its parameters
