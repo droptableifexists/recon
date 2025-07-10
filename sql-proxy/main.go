@@ -2,15 +2,98 @@ package main
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"log"
 	"net"
 	"os"
-	"slices"
+	"strings"
 
 	"github.com/droptableifexists/recon/sql-proxy/api"
 	"github.com/droptableifexists/recon/sql-proxy/store"
 )
+
+// PostgreSQL message types
+const (
+	QueryMessage    = 'Q'
+	ParseMessage    = 'P'
+	BindMessage     = 'B'
+	ExecuteMessage  = 'E'
+	DescribeMessage = 'D'
+	CloseMessage    = 'C'
+	SyncMessage     = 'S'
+)
+
+// Track prepared statements for extended protocol
+type PreparedStatement struct {
+	Name   string
+	Query  string
+	Params []interface{}
+}
+
+var preparedStatements = make(map[string]*PreparedStatement)
+
+// parsePostgreSQLMessage parses a PostgreSQL protocol message
+func parsePostgreSQLMessage(data []byte) (messageType byte, content []byte, err error) {
+	if len(data) < 5 {
+		return 0, nil, fmt.Errorf("message too short")
+	}
+
+	messageType = data[0]
+	messageLength := binary.BigEndian.Uint32(data[1:5])
+
+	if len(data) < int(messageLength) {
+		return 0, nil, fmt.Errorf("incomplete message")
+	}
+
+	content = data[5:messageLength]
+	return messageType, content, nil
+}
+
+// parseParseMessage extracts the query from a Parse message
+func parseParseMessage(data []byte) (statementName, query string, err error) {
+	// Parse message format: statement_name\0query\0num_param_types
+	parts := bytes.Split(data, []byte{0})
+	if len(parts) < 2 {
+		return "", "", fmt.Errorf("invalid parse message format")
+	}
+
+	statementName = string(parts[0])
+	query = string(parts[1])
+	return statementName, query, nil
+}
+
+// parseBindMessage extracts parameters from a Bind message
+func parseBindMessage(data []byte) (portalName, statementName string, params []interface{}, err error) {
+	// Bind message format: portal_name\0statement_name\0num_param_formats...
+	parts := bytes.Split(data, []byte{0})
+	if len(parts) < 2 {
+		return "", "", nil, fmt.Errorf("invalid bind message format")
+	}
+
+	portalName = string(parts[0])
+	statementName = string(parts[1])
+
+	// For simplicity, we'll just extract the parameter count for now
+	// A full implementation would parse the actual parameter values
+	return portalName, statementName, nil, nil
+}
+
+// formatParameterizedQuery combines a query with its parameters
+func formatParameterizedQuery(query string, params []interface{}) string {
+	if len(params) == 0 {
+		return query
+	}
+
+	// Simple parameter substitution for display
+	result := query
+	for i, param := range params {
+		placeholder := fmt.Sprintf("$%d", i+1)
+		paramStr := fmt.Sprintf("%v", param)
+		result = strings.Replace(result, placeholder, paramStr, 1)
+	}
+	return result
+}
 
 func main() {
 	// Get configuration from environment variables with defaults
@@ -127,15 +210,55 @@ func listenAndProxyData(src net.Conn, dst net.Conn, qs *store.QueryStore) {
 			return
 		}
 
-		if slices.Contains([]byte{'Q', 'P', 'B', 'E'}, buffer[0]) {
-			queryBytes := bytes.Trim(buffer[1:n], "\x00")
-			rawDataString := string(queryBytes)
-			fmt.Print("\n Query Passing thru: \n")
-			fmt.Print(rawDataString[1:])
-			qs.AddQuery(store.QueryExecuted{
-				Query: rawDataString[1:],
-			})
-			fmt.Print("\n End")
+		// Process the message if it's a PostgreSQL protocol message
+		if n > 0 {
+			messageType := buffer[0]
+			switch messageType {
+			case QueryMessage:
+				// Simple query protocol
+				if n > 5 {
+					queryContent := bytes.Trim(buffer[5:n], "\x00")
+					query := string(queryContent)
+					if query != "" {
+						fmt.Printf("Simple Query: %s\n", query)
+						qs.AddQuery(store.QueryExecuted{
+							Query: query,
+						})
+					}
+				}
+			case ParseMessage:
+				// Extended protocol - Parse message
+				if n > 5 {
+					parseContent := buffer[5:n]
+					statementName, query, err := parseParseMessage(parseContent)
+					if err == nil && query != "" {
+						fmt.Printf("Parse Statement: %s -> %s\n", statementName, query)
+						preparedStatements[statementName] = &PreparedStatement{
+							Name:  statementName,
+							Query: query,
+						}
+					}
+				}
+			case BindMessage:
+				// Extended protocol - Bind message (parameters)
+				if n > 5 {
+					bindContent := buffer[5:n]
+					portalName, statementName, params, err := parseBindMessage(bindContent)
+					if err == nil {
+						if stmt, exists := preparedStatements[statementName]; exists {
+							stmt.Params = params
+							formattedQuery := formatParameterizedQuery(stmt.Query, params)
+							fmt.Printf("Bind Parameters: %s -> %s\n", portalName, formattedQuery)
+							qs.AddQuery(store.QueryExecuted{
+								Query: formattedQuery,
+							})
+						}
+					}
+				}
+			case ExecuteMessage:
+				// Extended protocol - Execute message
+				fmt.Printf("Execute Statement\n")
+			}
 		}
 
 		// Write data to destination
