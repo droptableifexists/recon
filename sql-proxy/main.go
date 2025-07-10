@@ -31,8 +31,24 @@ type PreparedStatement struct {
 	Params []interface{}
 }
 
-var preparedStatements = make(map[string]*PreparedStatement)
-var lastParseMessage *PreparedStatement // Track the most recent Parse message
+// Track prepared statements per connection to avoid conflicts
+type ConnectionState struct {
+	PreparedStatements map[string]*PreparedStatement
+	LastParseMessage   *PreparedStatement
+}
+
+var connectionStates = make(map[net.Conn]*ConnectionState)
+
+func getConnectionState(conn net.Conn) *ConnectionState {
+	if state, exists := connectionStates[conn]; exists {
+		return state
+	}
+	state := &ConnectionState{
+		PreparedStatements: make(map[string]*PreparedStatement),
+	}
+	connectionStates[conn] = state
+	return state
+}
 
 // parsePostgreSQLMessage parses a PostgreSQL protocol message
 func parsePostgreSQLMessage(data []byte) (messageType byte, content []byte, err error) {
@@ -79,33 +95,55 @@ func parseBindMessage(data []byte) (portalName, statementName string, params []i
 	statementName = string(parts[1])
 	fmt.Printf("DEBUG: Portal: %s, Statement: %s\n", portalName, statementName)
 
-	// For now, let's try a simpler approach - look for parameter values in the remaining parts
-	// Skip the first two parts (portal_name and statement_name)
-	for i := 2; i < len(parts); i++ {
-		if len(parts[i]) > 0 {
-			// This might be a parameter value
-			paramStr := string(parts[i])
+	// Calculate position after the null-terminated strings
+	pos := len(parts[0]) + 1 + len(parts[1]) + 1 // +1 for each null terminator
 
-			// Filter out binary data and protocol artifacts
-			// Only include strings that look like actual parameter values
-			if len(paramStr) > 0 && len(paramStr) < 100 {
-				// Check if the string contains mostly printable characters
-				printableCount := 0
-				for _, r := range paramStr {
-					if r >= 32 && r <= 126 { // Printable ASCII range
-						printableCount++
-					}
-				}
+	// Read number of parameter formats (2 bytes)
+	if pos+2 > len(data) {
+		return portalName, statementName, nil, fmt.Errorf("message too short for parameter formats")
+	}
+	numFormats := int(binary.BigEndian.Uint16(data[pos : pos+2]))
+	pos += 2
+	fmt.Printf("DEBUG: Number of parameter formats: %d\n", numFormats)
 
-				// If more than 80% of characters are printable, consider it a parameter
-				if float64(printableCount)/float64(len(paramStr)) > 0.8 {
-					// Additional filter: exclude single characters that are likely protocol data
-					if len(paramStr) > 1 || (len(paramStr) == 1 && (paramStr[0] >= '0' && paramStr[0] <= '9' || paramStr[0] >= 'a' && paramStr[0] <= 'z' || paramStr[0] >= 'A' && paramStr[0] <= 'Z')) {
-						params = append(params, paramStr)
-						fmt.Printf("DEBUG: Found parameter: %s\n", paramStr)
-					}
-				}
-			}
+	// Skip parameter formats (each format is 2 bytes)
+	pos += numFormats * 2
+
+	// Read number of parameters (2 bytes)
+	if pos+2 > len(data) {
+		return portalName, statementName, nil, fmt.Errorf("message too short for parameter count")
+	}
+	numParams := int(binary.BigEndian.Uint16(data[pos : pos+2]))
+	pos += 2
+	fmt.Printf("DEBUG: Number of parameters: %d\n", numParams)
+
+	// Read parameter lengths (each length is 4 bytes)
+	paramLengths := make([]int, numParams)
+	for i := 0; i < numParams; i++ {
+		if pos+4 > len(data) {
+			return portalName, statementName, nil, fmt.Errorf("message too short for parameter lengths")
+		}
+		// Read as signed int32 (PostgreSQL uses signed lengths)
+		paramLength := int(int32(binary.BigEndian.Uint32(data[pos : pos+4])))
+		paramLengths[i] = paramLength
+		pos += 4
+		fmt.Printf("DEBUG: Parameter %d length: %d\n", i+1, paramLength)
+	}
+
+	// Read parameter values
+	for i := 0; i < numParams; i++ {
+		if paramLengths[i] == -1 {
+			// NULL parameter
+			params = append(params, nil)
+			fmt.Printf("DEBUG: Parameter %d: NULL\n", i+1)
+		} else if paramLengths[i] >= 0 && pos+paramLengths[i] <= len(data) {
+			// Read the parameter value
+			paramValue := data[pos : pos+paramLengths[i]]
+			params = append(params, string(paramValue))
+			fmt.Printf("DEBUG: Parameter %d: %s (length: %d)\n", i+1, string(paramValue), paramLengths[i])
+			pos += paramLengths[i]
+		} else {
+			fmt.Printf("DEBUG: Parameter %d: Invalid length %d at pos %d (data len: %d)\n", i+1, paramLengths[i], pos, len(data))
 		}
 	}
 
@@ -273,8 +311,8 @@ func listenAndProxyData(src net.Conn, dst net.Conn, qs *store.QueryStore) {
 							Name:  statementName,
 							Query: query,
 						}
-						preparedStatements[statementName] = stmt
-						lastParseMessage = stmt // Store for use with empty statement names
+						getConnectionState(src).PreparedStatements[statementName] = stmt
+						getConnectionState(src).LastParseMessage = stmt // Store for use with empty statement names
 					}
 				}
 			case BindMessage:
@@ -290,10 +328,10 @@ func listenAndProxyData(src net.Conn, dst net.Conn, qs *store.QueryStore) {
 
 						// If statement name is empty, use the last Parse message
 						if statementName == "" {
-							stmt = lastParseMessage
+							stmt = getConnectionState(src).LastParseMessage
 							exists = stmt != nil
 						} else {
-							stmt, exists = preparedStatements[statementName]
+							stmt, exists = getConnectionState(src).PreparedStatements[statementName]
 						}
 
 						if exists {
