@@ -32,6 +32,7 @@ type PreparedStatement struct {
 }
 
 var preparedStatements = make(map[string]*PreparedStatement)
+var lastParseMessage *PreparedStatement // Track the most recent Parse message
 
 // parsePostgreSQLMessage parses a PostgreSQL protocol message
 func parsePostgreSQLMessage(data []byte) (messageType byte, content []byte, err error) {
@@ -124,6 +125,8 @@ func parseBindMessage(data []byte) (portalName, statementName string, params []i
 				params = append(params, string(paramValue))
 				fmt.Printf("DEBUG: Parameter %d: %s (length: %d)\n", i+1, string(paramValue), paramLength)
 				pos += paramLength
+			} else {
+				fmt.Printf("DEBUG: Parameter %d: Invalid length %d at pos %d (data len: %d)\n", i+1, paramLength, pos, len(data))
 			}
 		}
 	}
@@ -266,6 +269,8 @@ func listenAndProxyData(src net.Conn, dst net.Conn, qs *store.QueryStore) {
 		// Process the message if it's a PostgreSQL protocol message
 		if n > 0 {
 			messageType := buffer[0]
+			fmt.Printf("DEBUG: Processing message type: %c (0x%02x)\n", messageType, messageType)
+
 			switch messageType {
 			case QueryMessage:
 				// Simple query protocol
@@ -286,10 +291,12 @@ func listenAndProxyData(src net.Conn, dst net.Conn, qs *store.QueryStore) {
 					statementName, query, err := parseParseMessage(parseContent)
 					if err == nil && query != "" {
 						fmt.Printf("Parse Statement: %s -> %s\n", statementName, query)
-						preparedStatements[statementName] = &PreparedStatement{
+						stmt := &PreparedStatement{
 							Name:  statementName,
 							Query: query,
 						}
+						preparedStatements[statementName] = stmt
+						lastParseMessage = stmt // Store for use with empty statement names
 					}
 				}
 			case BindMessage:
@@ -298,13 +305,28 @@ func listenAndProxyData(src net.Conn, dst net.Conn, qs *store.QueryStore) {
 					bindContent := buffer[5:n]
 					portalName, statementName, params, err := parseBindMessage(bindContent)
 					if err == nil {
-						if stmt, exists := preparedStatements[statementName]; exists {
+						fmt.Printf("DEBUG: Bind for statement: %s, portal: %s\n", statementName, portalName)
+
+						var stmt *PreparedStatement
+						var exists bool
+
+						// If statement name is empty, use the last Parse message
+						if statementName == "" {
+							stmt = lastParseMessage
+							exists = stmt != nil
+						} else {
+							stmt, exists = preparedStatements[statementName]
+						}
+
+						if exists {
 							stmt.Params = params
 							formattedQuery := formatParameterizedQuery(stmt.Query, params)
 							fmt.Printf("Bind Parameters: %s -> %s\n", portalName, formattedQuery)
 							qs.AddQuery(store.QueryExecuted{
 								Query: formattedQuery,
 							})
+						} else {
+							fmt.Printf("DEBUG: Statement %s not found in prepared statements\n", statementName)
 						}
 					}
 				}
