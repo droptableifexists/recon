@@ -159,6 +159,59 @@ func readNullTerminatedString(data []byte, pos int) (string, int) {
 	return string(data[start : pos-1]), pos
 }
 
+// cleanParameter removes unwanted characters from parameter values
+func cleanParameter(param interface{}) interface{} {
+	if param == nil {
+		return nil
+	}
+
+	paramStr, ok := param.(string)
+	if !ok {
+		return param
+	}
+
+	// Remove protocol artifacts that shouldn't be in parameter values
+	cleaned := strings.ReplaceAll(paramStr, "\u0001", "") // Remove SOH (Start of Heading)
+	cleaned = strings.ReplaceAll(cleaned, "\u0002", "")   // Remove STX (Start of Text)
+	cleaned = strings.ReplaceAll(cleaned, "\u0003", "")   // Remove ETX (End of Text)
+	cleaned = strings.ReplaceAll(cleaned, "\u0019", "")   // Remove ETB (End of Transmission Block)
+
+	// Only clean up formatting artifacts, preserve actual data
+	cleaned = strings.TrimSpace(cleaned)
+
+	// Replace formatting whitespace but preserve null bytes and other data
+	cleaned = strings.ReplaceAll(cleaned, "\t", " ") // Replace tabs with spaces
+	cleaned = strings.ReplaceAll(cleaned, "\n", " ") // Replace newlines with spaces
+	cleaned = strings.ReplaceAll(cleaned, "\r", " ") // Replace carriage returns with spaces
+
+	// Collapse multiple spaces into single spaces (but only if they're formatting spaces)
+	for strings.Contains(cleaned, "  ") {
+		cleaned = strings.ReplaceAll(cleaned, "  ", " ")
+	}
+
+	return cleaned
+}
+
+// cleanParameterForJSON converts special characters to JSON Unicode escape sequences
+func cleanParameterForJSON(param interface{}) interface{} {
+	if param == nil {
+		return nil
+	}
+
+	paramStr, ok := param.(string)
+	if !ok {
+		return param
+	}
+
+	// Convert to JSON-safe Unicode escape sequences
+	cleaned := strings.ReplaceAll(paramStr, "\u0000", "\\u0000") // Null byte
+	cleaned = strings.ReplaceAll(cleaned, "\n", "\\u000a")       // Newline
+	cleaned = strings.ReplaceAll(cleaned, "\t", "\\u0009")       // Tab
+	cleaned = strings.ReplaceAll(cleaned, "\r", "\\u000d")       // Carriage return
+
+	return cleaned
+}
+
 // formatParameterizedQuery combines a query with its parameters
 func formatParameterizedQuery(query string, params []interface{}) string {
 	if len(params) == 0 {
@@ -169,7 +222,8 @@ func formatParameterizedQuery(query string, params []interface{}) string {
 	result := query
 	for i, param := range params {
 		placeholder := fmt.Sprintf("$%d", i+1)
-		paramStr := fmt.Sprintf("%v", param)
+		cleanedParam := cleanParameter(param)
+		paramStr := fmt.Sprintf("%v", cleanedParam)
 		result = strings.ReplaceAll(result, placeholder, paramStr)
 	}
 	return result
