@@ -65,7 +65,7 @@ func parseParseMessage(data []byte) (statementName, query string, err error) {
 
 // parseBindMessage extracts parameters from a Bind message
 func parseBindMessage(data []byte) (portalName, statementName string, params []interface{}, err error) {
-	// Bind message format: portal_name\0statement_name\0num_param_formats...
+	// Bind message format: portal_name\0statement_name\0num_param_formats\0param_formats\0num_params\0param_lengths\0param_values
 	parts := bytes.Split(data, []byte{0})
 	if len(parts) < 2 {
 		return "", "", nil, fmt.Errorf("invalid bind message format")
@@ -74,9 +74,53 @@ func parseBindMessage(data []byte) (portalName, statementName string, params []i
 	portalName = string(parts[0])
 	statementName = string(parts[1])
 
-	// For simplicity, we'll just extract the parameter count for now
-	// A full implementation would parse the actual parameter values
-	return portalName, statementName, nil, nil
+	// The PostgreSQL Bind message has a complex binary format
+	// Let's try a different approach - look for the parameter values directly in the binary data
+
+	// Find the position after the null-terminated strings
+	pos := 0
+	for i := 0; i < 2; i++ { // Skip portal_name and statement_name
+		pos += len(parts[i]) + 1 // +1 for the null terminator
+	}
+
+	// Skip parameter format info
+	if pos < len(data) {
+		// Skip num_param_formats (2 bytes)
+		pos += 2
+	}
+
+	// Skip parameter formats if any
+	if pos < len(data) {
+		numFormats := int(binary.BigEndian.Uint16(data[pos-2 : pos]))
+		pos += numFormats * 2 // Each format is 2 bytes
+	}
+
+	// Read number of parameters
+	if pos+2 <= len(data) {
+		numParams := int(binary.BigEndian.Uint16(data[pos : pos+2]))
+		pos += 2
+
+		// Skip parameter lengths
+		pos += numParams * 4 // Each length is 4 bytes
+
+		// Now read the actual parameter values
+		for i := 0; i < numParams && pos+4 <= len(data); i++ {
+			paramLength := int(binary.BigEndian.Uint32(data[pos : pos+4]))
+			pos += 4
+
+			if paramLength == -1 {
+				// NULL parameter
+				params = append(params, nil)
+			} else if pos+paramLength <= len(data) {
+				// Read the parameter value
+				paramValue := data[pos : pos+paramLength]
+				params = append(params, string(paramValue))
+				pos += paramLength
+			}
+		}
+	}
+
+	return portalName, statementName, params, nil
 }
 
 // formatParameterizedQuery combines a query with its parameters
