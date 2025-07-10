@@ -74,6 +74,10 @@ func parseBindMessage(data []byte) (portalName, statementName string, params []i
 	portalName = string(parts[0])
 	statementName = string(parts[1])
 
+	// Debug: Print the raw data
+	fmt.Printf("DEBUG: Bind message raw data (hex): %x\n", data)
+	fmt.Printf("DEBUG: Portal: %s, Statement: %s\n", portalName, statementName)
+
 	// The PostgreSQL Bind message has a complex binary format
 	// Let's try a different approach - look for the parameter values directly in the binary data
 
@@ -100,6 +104,8 @@ func parseBindMessage(data []byte) (portalName, statementName string, params []i
 		numParams := int(binary.BigEndian.Uint16(data[pos : pos+2]))
 		pos += 2
 
+		fmt.Printf("DEBUG: Number of parameters: %d\n", numParams)
+
 		// Skip parameter lengths
 		pos += numParams * 4 // Each length is 4 bytes
 
@@ -111,15 +117,18 @@ func parseBindMessage(data []byte) (portalName, statementName string, params []i
 			if paramLength == -1 {
 				// NULL parameter
 				params = append(params, nil)
+				fmt.Printf("DEBUG: Parameter %d: NULL\n", i+1)
 			} else if pos+paramLength <= len(data) {
 				// Read the parameter value
 				paramValue := data[pos : pos+paramLength]
 				params = append(params, string(paramValue))
+				fmt.Printf("DEBUG: Parameter %d: %s (length: %d)\n", i+1, string(paramValue), paramLength)
 				pos += paramLength
 			}
 		}
 	}
 
+	fmt.Printf("DEBUG: Extracted %d parameters: %v\n", len(params), params)
 	return portalName, statementName, params, nil
 }
 
