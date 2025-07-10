@@ -85,10 +85,26 @@ func parseBindMessage(data []byte) (portalName, statementName string, params []i
 		if len(parts[i]) > 0 {
 			// This might be a parameter value
 			paramStr := string(parts[i])
-			// Only add if it looks like a reasonable parameter value
+
+			// Filter out binary data and protocol artifacts
+			// Only include strings that look like actual parameter values
 			if len(paramStr) > 0 && len(paramStr) < 100 {
-				params = append(params, paramStr)
-				fmt.Printf("DEBUG: Found parameter: %s\n", paramStr)
+				// Check if the string contains mostly printable characters
+				printableCount := 0
+				for _, r := range paramStr {
+					if r >= 32 && r <= 126 { // Printable ASCII range
+						printableCount++
+					}
+				}
+
+				// If more than 80% of characters are printable, consider it a parameter
+				if float64(printableCount)/float64(len(paramStr)) > 0.8 {
+					// Additional filter: exclude single characters that are likely protocol data
+					if len(paramStr) > 1 || (len(paramStr) == 1 && (paramStr[0] >= '0' && paramStr[0] <= '9' || paramStr[0] >= 'a' && paramStr[0] <= 'z' || paramStr[0] >= 'A' && paramStr[0] <= 'Z')) {
+						params = append(params, paramStr)
+						fmt.Printf("DEBUG: Found parameter: %s\n", paramStr)
+					}
+				}
 			}
 		}
 	}
