@@ -227,16 +227,83 @@ func decodeBinaryParameter(data []byte) interface{} {
 
 // decodePostgreSQLArray attempts to decode a PostgreSQL array
 func decodePostgreSQLArray(data []byte) interface{} {
-	// For now, return a simplified representation
-	// Full array decoding is complex and would require parsing the array header
+	if len(data) < 20 {
+		return fmt.Sprintf("ARRAY[%d bytes]", len(data))
+	}
+
+	// PostgreSQL array format:
+	// 4 bytes: number of dimensions
+	// 4 bytes: flags (has nulls, etc.)
+	// 4 bytes: element type OID
+	// For each dimension:
+	//   4 bytes: size
+	//   4 bytes: lower bound
+
+	// For simplicity, let's try to extract text elements
+	// This is a simplified approach - full array parsing is complex
+
+	// Skip header (12 bytes)
+	pos := 12
+
+	// Try to find text elements
+	var elements []string
+	for pos < len(data) {
+		// Look for null-terminated strings
+		start := pos
+		for pos < len(data) && data[pos] != 0 {
+			pos++
+		}
+		if pos < len(data) && pos > start {
+			element := string(data[start:pos])
+			// Only add if it looks like reasonable text
+			if len(element) > 0 && len(element) < 100 {
+				elements = append(elements, element)
+			}
+		}
+		pos++
+	}
+
+	if len(elements) > 0 {
+		return elements
+	}
+
 	return fmt.Sprintf("ARRAY[%d elements]", len(data))
 }
 
 // decodePostgreSQLNumeric attempts to decode a PostgreSQL numeric
 func decodePostgreSQLNumeric(data []byte) interface{} {
+	if len(data) < 8 {
+		return fmt.Sprintf("NUMERIC[%d bytes]", len(data))
+	}
+
+	// PostgreSQL numeric format:
+	// 2 bytes: number of digits before decimal point
+	// 2 bytes: number of digits after decimal point
+	// 2 bytes: weight (scale factor)
+	// 2 bytes: sign (0x0000 = positive, 0x4000 = negative, 0xC000 = NaN)
+	// Then the actual digits as 16-bit values
+
+	if len(data) < 8 {
+		return fmt.Sprintf("NUMERIC[%d bytes]", len(data))
+	}
+
+	// Read header
+	ndigits := int(binary.BigEndian.Uint16(data[0:2]))
+	weight := int16(binary.BigEndian.Uint16(data[2:4]))
+	sign := binary.BigEndian.Uint16(data[4:6])
+
+	// Check for special values
+	if sign == 0xC000 {
+		return "NaN"
+	}
+
 	// For now, return a simplified representation
-	// Full numeric decoding is complex and would require parsing the numeric header
-	return fmt.Sprintf("NUMERIC[%d bytes]", len(data))
+	// Full numeric decoding would require parsing the digit array
+	if sign == 0x4000 {
+		return fmt.Sprintf("NUMERIC(-%d digits, weight %d)", ndigits, weight)
+	} else {
+		return fmt.Sprintf("NUMERIC(%d digits, weight %d)", ndigits, weight)
+	}
 }
 
 // readNullTerminatedString reads a null-terminated string from the data
@@ -335,6 +402,17 @@ func formatParameterForDisplay(param interface{}) string {
 	case int32, int64, int:
 		// Numbers don't need quotes
 		return fmt.Sprintf("%v", v)
+	case []string:
+		// Format arrays
+		if len(v) == 0 {
+			return "ARRAY[]"
+		}
+		quoted := make([]string, len(v))
+		for i, elem := range v {
+			escaped := strings.ReplaceAll(elem, "'", "''")
+			quoted[i] = fmt.Sprintf("'%s'", escaped)
+		}
+		return fmt.Sprintf("ARRAY[%s]", strings.Join(quoted, ", "))
 	default:
 		// For other types, use the default formatting
 		return fmt.Sprintf("%v", v)
