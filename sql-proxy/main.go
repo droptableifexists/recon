@@ -239,35 +239,64 @@ func decodePostgreSQLArray(data []byte) interface{} {
 	//   4 bytes: size
 	//   4 bytes: lower bound
 
-	// For simplicity, let's try to extract text elements
-	// This is a simplified approach - full array parsing is complex
-
 	// Skip header (12 bytes)
 	pos := 12
 
-	// Try to find text elements
+	// Read dimension info
+	if pos+8 > len(data) {
+		return fmt.Sprintf("ARRAY[%d bytes]", len(data))
+	}
+
+	// For 1-dimensional arrays, we have:
+	// 4 bytes: size of the dimension
+	// 4 bytes: lower bound (usually 1)
+	size := int(binary.BigEndian.Uint32(data[pos : pos+4]))
+	pos += 8
+
+	// Now we should have the actual array elements
+	// Each element has a 4-byte length followed by the data
 	var elements []string
-	for pos < len(data) {
-		// Look for null-terminated strings
-		start := pos
-		for pos < len(data) && data[pos] != 0 {
-			pos++
+	for i := 0; i < size && pos < len(data); i++ {
+		if pos+4 > len(data) {
+			break
 		}
-		if pos < len(data) && pos > start {
-			element := string(data[start:pos])
-			// Only add if it looks like reasonable text
-			if len(element) > 0 && len(element) < 100 {
-				elements = append(elements, element)
+
+		// Read element length
+		elemLen := int(int32(binary.BigEndian.Uint32(data[pos : pos+4])))
+		pos += 4
+
+		if elemLen == -1 {
+			// NULL element
+			elements = append(elements, "NULL")
+		} else if elemLen >= 0 && pos+elemLen <= len(data) {
+			// Read element data
+			elemData := data[pos : pos+elemLen]
+			pos += elemLen
+
+			// Try to decode as text
+			elemStr := string(elemData)
+			// Filter out control characters and metadata
+			if len(elemStr) > 0 && len(elemStr) < 100 && !containsControlChars(elemStr) {
+				elements = append(elements, elemStr)
 			}
 		}
-		pos++
 	}
 
 	if len(elements) > 0 {
 		return elements
 	}
 
-	return fmt.Sprintf("ARRAY[%d elements]", len(data))
+	return fmt.Sprintf("ARRAY[%d elements]", size)
+}
+
+// containsControlChars checks if a string contains control characters
+func containsControlChars(s string) bool {
+	for _, r := range s {
+		if r < 32 && r != 9 && r != 10 && r != 13 { // Control chars except tab, newline, carriage return
+			return true
+		}
+	}
+	return false
 }
 
 // decodePostgreSQLNumeric attempts to decode a PostgreSQL numeric
