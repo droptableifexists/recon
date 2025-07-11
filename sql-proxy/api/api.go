@@ -21,10 +21,15 @@ func MakeQueriesExecutedAPI(qs *store.QueryStore) *QueriesExecutedAPI {
 
 func (api QueriesExecutedAPI) RunApi() {
 	http.HandleFunc("/queries", func(w http.ResponseWriter, r *http.Request) {
-		if qe, err := json.Marshal(api.queryStore.ListQueries()); err == nil {
-			w.Write(qe)
-		} else {
-			fmt.Print(err)
+		w.Header().Set("Content-Type", "application/json")
+
+		// Use a custom encoder that doesn't escape HTML characters
+		encoder := json.NewEncoder(w)
+		encoder.SetEscapeHTML(false)
+
+		if err := encoder.Encode(api.queryStore.ListQueries()); err != nil {
+			fmt.Printf("Error encoding JSON: %v\n", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
 		}
 	})
 
