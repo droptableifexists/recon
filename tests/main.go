@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -89,7 +90,27 @@ func main() {
 	}
 
 	fmt.Println("Response from /queries:")
-	fmt.Println(string(body))
+
+	// Pretty print the JSON response
+	var parsedQueries []map[string]string
+	if err := json.Unmarshal(body, &parsedQueries); err != nil {
+		fmt.Printf("Error parsing JSON: %v\n", err)
+		fmt.Println("Raw response:")
+		fmt.Println(string(body))
+		return
+	}
+
+	// Pretty print with indentation
+	prettyJSON, err := json.MarshalIndent(parsedQueries, "", "  ")
+	if err != nil {
+		fmt.Printf("Error formatting JSON: %v\n", err)
+		fmt.Println("Raw response:")
+		fmt.Println(string(body))
+		return
+	}
+
+	fmt.Printf("Found %d queries:\n", len(parsedQueries))
+	fmt.Println(string(prettyJSON))
 }
 
 func test_transaction(pool *pgxpool.Pool) {
