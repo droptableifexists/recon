@@ -1,13 +1,13 @@
 package main
 
 import (
-	"database/sql"
+	"context"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 
-	_ "github.com/lib/pq"
+	"github.com/jackc/pgx/v4/pgxpool"
 )
 
 func main() {
@@ -19,27 +19,30 @@ func main() {
 	}
 
 	// Connection parameters matching your working psql connection
-	connStr := "host=localhost port=5433 user=postgres password=postgres dbname=postgres sslmode=disable"
+	connStr := "postgres://postgres:postgres@localhost:5433/postgres?sslmode=disable"
 	fmt.Printf("Connecting with: %s\n", connStr)
 
-	db, err := sql.Open("postgres", connStr)
+	// Create connection pool
+	pool, err := pgxpool.Connect(context.Background(), connStr)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close()
+	defer pool.Close()
 
 	// Execute mock SQL queries through the proxy
 	for _, query := range queries {
 		fmt.Printf("Executing query: %s\n", query)
-		rows, err := db.Query(query)
+		rows, err := pool.Query(context.Background(), query)
 		if err != nil {
 			log.Fatalf("Error executing query: %v", err)
 		}
 		defer rows.Close()
 
-		columns, err := rows.Columns()
-		if err != nil {
-			log.Fatalf("Error getting columns: %v", err)
+		// Get column names
+		fieldDescriptions := rows.FieldDescriptions()
+		columns := make([]string, len(fieldDescriptions))
+		for i, fd := range fieldDescriptions {
+			columns[i] = string(fd.Name)
 		}
 
 		values := make([]interface{}, len(columns))
@@ -67,10 +70,10 @@ func main() {
 		}
 	}
 
-	test_transaction()
-	test_parameterized_transaction()
-	test_any_array_queries()
-	test_multiline_sql_queries()
+	test_transaction(pool)
+	test_parameterized_transaction(pool)
+	test_any_array_queries(pool)
+	test_multiline_sql_queries(pool)
 
 	resp, err := http.Get("http://localhost:8080/queries")
 	if err != nil {
@@ -89,65 +92,52 @@ func main() {
 	fmt.Println(string(body))
 }
 
-func test_transaction() {
-	connStr := "host=localhost port=5433 user=postgres password=postgres dbname=postgres sslmode=disable"
-	fmt.Printf("Connecting with: %s\n", connStr)
+func test_transaction(pool *pgxpool.Pool) {
+	fmt.Printf("Testing transactions\n")
 
-	db, err := sql.Open("postgres", connStr)
+	// Begin transaction
+	tx, err := pool.Begin(context.Background())
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close()
-
-	tx, err := db.Begin()
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer tx.Rollback()
+	defer tx.Rollback(context.Background())
 
 	// Use Exec instead of Query for simple queries in transaction
-	_, err = tx.Exec("SELECT 1 as oneinatransaction;")
+	_, err = tx.Exec(context.Background(), "SELECT 1 as oneinatransaction;")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	_, err = tx.Exec("SELECT 2 as twoinatransaction;")
+	_, err = tx.Exec(context.Background(), "SELECT 2 as twoinatransaction;")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	_, err = tx.Exec("SELECT 3 as threeinatransaction;")
+	_, err = tx.Exec(context.Background(), "SELECT 3 as threeinatransaction;")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	err = tx.Commit()
+	err = tx.Commit(context.Background())
 	if err != nil {
 		log.Fatal(err)
 	}
 }
 
-func test_parameterized_transaction() {
-	connStr := "host=localhost port=5433 user=postgres password=postgres dbname=postgres sslmode=disable"
-	fmt.Printf("Testing parameterized SQL in transaction with: %s\n", connStr)
+func test_parameterized_transaction(pool *pgxpool.Pool) {
+	fmt.Printf("Testing parameterized SQL in transaction\n")
 
-	db, err := sql.Open("postgres", connStr)
+	// Begin transaction
+	tx, err := pool.Begin(context.Background())
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close()
-
-	// Start transaction
-	tx, err := db.Begin()
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer tx.Rollback()
+	defer tx.Rollback(context.Background())
 
 	// Test 1: Parameterized SELECT with single parameter
 	fmt.Println("Test 1: Parameterized SELECT with single parameter")
 	num := 42
-	rows, err := tx.Query("SELECT $1::int as param_value, ($1::int) * 2 as doubled;", num)
+	rows, err := tx.Query(context.Background(), "SELECT $1::int as param_value, ($1::int) * 2 as doubled;", num)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -165,7 +155,7 @@ func test_parameterized_transaction() {
 	// Test 2: Parameterized SELECT with multiple parameters
 	fmt.Println("Test 2: Parameterized SELECT with multiple parameters")
 	num1, num2, num3 := 10, 20, 30
-	rows2, err := tx.Query("SELECT $1::int as first, $2::int as second, $3::int as third, ($1::int) + ($2::int) + ($3::int) as sum;", num1, num2, num3)
+	rows2, err := tx.Query(context.Background(), "SELECT $1::int as first, $2::int as second, $3::int as third, ($1::int) + ($2::int) + ($3::int) as sum;", num1, num2, num3)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -182,27 +172,27 @@ func test_parameterized_transaction() {
 
 	// Test 3: Parameterized INSERT (if we had a table, this would work)
 	fmt.Println("Test 3: Parameterized INSERT simulation")
-	_, err = tx.Exec("SELECT $1::int as id, $2::text as name, $3::numeric as value;", 1, "test_item", 99.99)
+	_, err = tx.Exec(context.Background(), "SELECT $1::int as id, $2::text as name, $3::numeric as value;", 1, "test_item", 99.99)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// Test 4: Parameterized UPDATE simulation
 	fmt.Println("Test 4: Parameterized UPDATE simulation")
-	_, err = tx.Exec("SELECT $1::int as old_value, $2::int as new_value, 'updated' as status;", 50, 100)
+	_, err = tx.Exec(context.Background(), "SELECT $1::int as old_value, $2::int as new_value, 'updated' as status;", 50, 100)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// Test 5: Mixed parameterized and non-parameterized queries
 	fmt.Println("Test 5: Mixed parameterized and non-parameterized queries")
-	_, err = tx.Exec("SELECT 1 as constant, $1::text as parameter;", "mixed_test")
+	_, err = tx.Exec(context.Background(), "SELECT 1 as constant, $1::text as parameter;", "mixed_test")
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// Commit the transaction
-	err = tx.Commit()
+	err = tx.Commit(context.Background())
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -210,27 +200,20 @@ func test_parameterized_transaction() {
 	fmt.Println("Parameterized transaction test completed successfully")
 }
 
-func test_any_array_queries() {
-	connStr := "host=localhost port=5433 user=postgres password=postgres dbname=postgres sslmode=disable"
-	fmt.Printf("Testing ANY(array) queries with: %s\n", connStr)
+func test_any_array_queries(pool *pgxpool.Pool) {
+	fmt.Printf("Testing ANY(array) queries\n")
 
-	db, err := sql.Open("postgres", connStr)
+	// Begin transaction
+	tx, err := pool.Begin(context.Background())
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close()
+	defer tx.Rollback(context.Background())
 
-	// Start transaction
-	tx, err := db.Begin()
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer tx.Rollback()
-
-	// Test 1: ANY(array) with string array
+	// Test 1: ANY(array) with string array - NO pq.Array() needed!
 	fmt.Println("Test 1: ANY(array) with string array")
 	statuses := []string{"active", "pending", "completed"}
-	rows, err := tx.Query("SELECT $1::text as status, $1::text = ANY($2::text[]) as is_in_array;", "active", statuses)
+	rows, err := tx.Query(context.Background(), "SELECT $1::text as status, $1::text = ANY($2::text[]) as is_in_array;", "active", statuses)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -246,10 +229,10 @@ func test_any_array_queries() {
 		fmt.Printf("Status: %s, Is in array: %t\n", status, isInArray)
 	}
 
-	// Test 2: ANY(array) with integer array
+	// Test 2: ANY(array) with integer array - NO pq.Array() needed!
 	fmt.Println("Test 2: ANY(array) with integer array")
 	numbers := []int{1, 2, 3, 4, 5}
-	rows2, err := tx.Query("SELECT $1::int as number, $1::int = ANY($2::int[]) as is_in_array;", 3, numbers)
+	rows2, err := tx.Query(context.Background(), "SELECT $1::int as number, $1::int = ANY($2::int[]) as is_in_array;", 3, numbers)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -265,10 +248,10 @@ func test_any_array_queries() {
 		fmt.Printf("Number: %d, Is in array: %t\n", number, isInArray)
 	}
 
-	// Test 3: ANY(array) with mixed data types
+	// Test 3: ANY(array) with mixed data types - NO pq.Array() needed!
 	fmt.Println("Test 3: ANY(array) with mixed data types")
 	values := []string{"apple", "banana", "cherry"}
-	rows3, err := tx.Query("SELECT $1::text as fruit, $1::text = ANY($2::text[]) as is_fruit;", "banana", values)
+	rows3, err := tx.Query(context.Background(), "SELECT $1::text as fruit, $1::text = ANY($2::text[]) as is_fruit;", "banana", values)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -284,10 +267,10 @@ func test_any_array_queries() {
 		fmt.Printf("Fruit: %s, Is fruit: %t\n", fruit, isFruit)
 	}
 
-	// Test 4: ANY(array) with empty array
+	// Test 4: ANY(array) with empty array - NO pq.Array() needed!
 	fmt.Println("Test 4: ANY(array) with empty array")
 	emptyArray := []string{}
-	rows4, err := tx.Query("SELECT $1::text as value, $1::text = ANY($2::text[]) as is_in_empty_array;", "test", emptyArray)
+	rows4, err := tx.Query(context.Background(), "SELECT $1::text as value, $1::text = ANY($2::text[]) as is_in_empty_array;", "test", emptyArray)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -304,7 +287,7 @@ func test_any_array_queries() {
 	}
 
 	// Commit the transaction
-	err = tx.Commit()
+	err = tx.Commit(context.Background())
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -312,22 +295,15 @@ func test_any_array_queries() {
 	fmt.Println("ANY(array) queries test completed successfully")
 }
 
-func test_multiline_sql_queries() {
-	connStr := "host=localhost port=5433 user=postgres password=postgres dbname=postgres sslmode=disable"
-	fmt.Printf("Testing multiline SQL queries with: %s\n", connStr)
+func test_multiline_sql_queries(pool *pgxpool.Pool) {
+	fmt.Printf("Testing multiline SQL queries\n")
 
-	db, err := sql.Open("postgres", connStr)
+	// Begin transaction
+	tx, err := pool.Begin(context.Background())
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close()
-
-	// Start transaction
-	tx, err := db.Begin()
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer tx.Rollback()
+	defer tx.Rollback(context.Background())
 
 	// Test 1: SQL with newlines and tabs
 	fmt.Println("Test 1: SQL with newlines and tabs")
@@ -340,7 +316,7 @@ func test_multiline_sql_queries() {
 		AND $2::text IS NOT NULL
 	ORDER BY $1::int;`
 
-	rows, err := tx.Query(multilineQuery, 42, "multiline_test", 99.99)
+	rows, err := tx.Query(context.Background(), multilineQuery, 42, "multiline_test", 99.99)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -357,7 +333,7 @@ func test_multiline_sql_queries() {
 		fmt.Printf("ID: %d, Name: %s, Value: %f\n", id, name, value)
 	}
 
-	// Test 2: SQL with complex formatting
+	// Test 2: SQL with complex formatting - NO pq.Array() needed!
 	fmt.Println("Test 2: SQL with complex formatting")
 	complexQuery := `SELECT 
 		CASE 
@@ -371,7 +347,7 @@ func test_multiline_sql_queries() {
 	WHERE $1::int BETWEEN 1 AND 100;`
 
 	numbers := []int{1, 2, 3, 4, 5}
-	rows2, err := tx.Query(complexQuery, 15, "complex formatting test", numbers)
+	rows2, err := tx.Query(context.Background(), complexQuery, 15, "complex formatting test", numbers)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -401,7 +377,7 @@ func test_multiline_sql_queries() {
 		WHERE sub > 0
 	);`
 
-	rows3, err := tx.Query(subquerySQL, "main_value", 25, "original_text")
+	rows3, err := tx.Query(context.Background(), subquerySQL, "main_value", 25, "original_text")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -430,7 +406,7 @@ func test_multiline_sql_queries() {
 	FROM (SELECT 1) as dummy
 	WHERE $1::int > 0;`
 
-	rows4, err := tx.Query(windowQuery, 1, "window_test", 95.5)
+	rows4, err := tx.Query(context.Background(), windowQuery, 1, "window_test", 95.5)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -449,7 +425,7 @@ func test_multiline_sql_queries() {
 	}
 
 	// Commit the transaction
-	err = tx.Commit()
+	err = tx.Commit(context.Background())
 	if err != nil {
 		log.Fatal(err)
 	}
