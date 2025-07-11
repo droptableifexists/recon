@@ -69,6 +69,8 @@ func main() {
 
 	test_transaction()
 	test_parameterized_transaction()
+	test_any_array_queries()
+	test_multiline_sql_queries()
 
 	resp, err := http.Get("http://localhost:8080/queries")
 	if err != nil {
@@ -206,4 +208,251 @@ func test_parameterized_transaction() {
 	}
 
 	fmt.Println("Parameterized transaction test completed successfully")
+}
+
+func test_any_array_queries() {
+	connStr := "host=localhost port=5433 user=postgres password=postgres dbname=postgres sslmode=disable"
+	fmt.Printf("Testing ANY(array) queries with: %s\n", connStr)
+
+	db, err := sql.Open("postgres", connStr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	// Start transaction
+	tx, err := db.Begin()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer tx.Rollback()
+
+	// Test 1: ANY(array) with string array
+	fmt.Println("Test 1: ANY(array) with string array")
+	statuses := []string{"active", "pending", "completed"}
+	rows, err := tx.Query("SELECT $1::text as status, $1::text = ANY($2::text[]) as is_in_array;", "active", statuses)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var status string
+		var isInArray bool
+		err := rows.Scan(&status, &isInArray)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("Status: %s, Is in array: %t\n", status, isInArray)
+	}
+
+	// Test 2: ANY(array) with integer array
+	fmt.Println("Test 2: ANY(array) with integer array")
+	numbers := []int{1, 2, 3, 4, 5}
+	rows2, err := tx.Query("SELECT $1::int as number, $1::int = ANY($2::int[]) as is_in_array;", 3, numbers)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rows2.Close()
+
+	for rows2.Next() {
+		var number int
+		var isInArray bool
+		err := rows2.Scan(&number, &isInArray)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("Number: %d, Is in array: %t\n", number, isInArray)
+	}
+
+	// Test 3: ANY(array) with mixed data types
+	fmt.Println("Test 3: ANY(array) with mixed data types")
+	values := []string{"apple", "banana", "cherry"}
+	rows3, err := tx.Query("SELECT $1::text as fruit, $1::text = ANY($2::text[]) as is_fruit;", "banana", values)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rows3.Close()
+
+	for rows3.Next() {
+		var fruit string
+		var isFruit bool
+		err := rows3.Scan(&fruit, &isFruit)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("Fruit: %s, Is fruit: %t\n", fruit, isFruit)
+	}
+
+	// Test 4: ANY(array) with empty array
+	fmt.Println("Test 4: ANY(array) with empty array")
+	emptyArray := []string{}
+	rows4, err := tx.Query("SELECT $1::text as value, $1::text = ANY($2::text[]) as is_in_empty_array;", "test", emptyArray)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rows4.Close()
+
+	for rows4.Next() {
+		var value string
+		var isInEmptyArray bool
+		err := rows4.Scan(&value, &isInEmptyArray)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("Value: %s, Is in empty array: %t\n", value, isInEmptyArray)
+	}
+
+	// Commit the transaction
+	err = tx.Commit()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println("ANY(array) queries test completed successfully")
+}
+
+func test_multiline_sql_queries() {
+	connStr := "host=localhost port=5433 user=postgres password=postgres dbname=postgres sslmode=disable"
+	fmt.Printf("Testing multiline SQL queries with: %s\n", connStr)
+
+	db, err := sql.Open("postgres", connStr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	// Start transaction
+	tx, err := db.Begin()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer tx.Rollback()
+
+	// Test 1: SQL with newlines and tabs
+	fmt.Println("Test 1: SQL with newlines and tabs")
+	multilineQuery := `SELECT 
+		$1::int as id,
+		$2::text as name,
+		$3::numeric as value
+	FROM (SELECT 1) as dummy
+	WHERE $1::int > 0
+		AND $2::text IS NOT NULL
+	ORDER BY $1::int;`
+
+	rows, err := tx.Query(multilineQuery, 42, "multiline_test", 99.99)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id int
+		var name string
+		var value float64
+		err := rows.Scan(&id, &name, &value)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("ID: %d, Name: %s, Value: %f\n", id, name, value)
+	}
+
+	// Test 2: SQL with complex formatting
+	fmt.Println("Test 2: SQL with complex formatting")
+	complexQuery := `SELECT 
+		CASE 
+			WHEN $1::int > 10 THEN 'high'
+			WHEN $1::int > 5 THEN 'medium'
+			ELSE 'low'
+		END as category,
+		$2::text as description,
+		$3::int[] as numbers
+	FROM (SELECT 1) as dummy
+	WHERE $1::int BETWEEN 1 AND 100;`
+
+	numbers := []int{1, 2, 3, 4, 5}
+	rows2, err := tx.Query(complexQuery, 15, "complex formatting test", numbers)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rows2.Close()
+
+	for rows2.Next() {
+		var category string
+		var description string
+		var numbersArray []int
+		err := rows2.Scan(&category, &description, &numbersArray)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("Category: %s, Description: %s, Numbers: %v\n", category, description, numbersArray)
+	}
+
+	// Test 3: SQL with subqueries and formatting
+	fmt.Println("Test 3: SQL with subqueries and formatting")
+	subquerySQL := `SELECT 
+		$1::text as main_value,
+		(SELECT $2::int * 2) as calculated_value,
+		(SELECT $3::text || ' - processed') as processed_text
+	FROM (SELECT 1) as dummy
+	WHERE EXISTS (
+		SELECT 1 
+		FROM (SELECT $2::int) as sub 
+		WHERE sub > 0
+	);`
+
+	rows3, err := tx.Query(subquerySQL, "main_value", 25, "original_text")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rows3.Close()
+
+	for rows3.Next() {
+		var mainValue string
+		var calculatedValue int
+		var processedText string
+		err := rows3.Scan(&mainValue, &calculatedValue, &processedText)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("Main: %s, Calculated: %d, Processed: %s\n", mainValue, calculatedValue, processedText)
+	}
+
+	// Test 4: SQL with window functions and formatting
+	fmt.Println("Test 4: SQL with window functions and formatting")
+	windowQuery := `SELECT 
+		$1::int as row_num,
+		$2::text as name,
+		$3::numeric as score,
+		ROW_NUMBER() OVER (
+			ORDER BY $3::numeric DESC
+		) as rank
+	FROM (SELECT 1) as dummy
+	WHERE $1::int > 0;`
+
+	rows4, err := tx.Query(windowQuery, 1, "window_test", 95.5)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rows4.Close()
+
+	for rows4.Next() {
+		var rowNum int
+		var name string
+		var score float64
+		var rank int
+		err := rows4.Scan(&rowNum, &name, &score, &rank)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("Row: %d, Name: %s, Score: %f, Rank: %d\n", rowNum, name, score, rank)
+	}
+
+	// Commit the transaction
+	err = tx.Commit()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println("Multiline SQL queries test completed successfully")
 }
