@@ -403,7 +403,7 @@ func cleanParameterForJSON(param interface{}) interface{} {
 // formatParameterizedQuery combines a query with its parameters
 func formatParameterizedQuery(query string, params []interface{}) string {
 	if len(params) == 0 {
-		return query
+		return cleanQueryForDisplay(query)
 	}
 
 	// Simple parameter substitution for display
@@ -414,7 +414,21 @@ func formatParameterizedQuery(query string, params []interface{}) string {
 		paramStr := formatParameterForDisplay(cleanedParam)
 		result = strings.ReplaceAll(result, placeholder, paramStr)
 	}
-	return result
+
+	return cleanQueryForDisplay(result)
+}
+
+// cleanQueryForDisplay cleans up the final query for better display
+func cleanQueryForDisplay(query string) string {
+	// Replace Unicode escape sequences with readable characters
+	cleaned := strings.ReplaceAll(query, "\u003e", ">")   // Greater than
+	cleaned = strings.ReplaceAll(cleaned, "\u003c", "<")  // Less than
+	cleaned = strings.ReplaceAll(cleaned, "\u003d", "=")  // Equals
+	cleaned = strings.ReplaceAll(cleaned, "\u0026", "&")  // Ampersand
+	cleaned = strings.ReplaceAll(cleaned, "\u0027", "'")  // Single quote
+	cleaned = strings.ReplaceAll(cleaned, "\u0022", "\"") // Double quote
+
+	return cleaned
 }
 
 // formatParameterForDisplay formats a parameter for display in SQL
