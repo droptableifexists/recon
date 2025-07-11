@@ -381,6 +381,7 @@ func listenAndProxyData(src net.Conn, dst net.Conn, qs *store.QueryStore) {
 				// Extended protocol - Bind message (parameters)
 				if n > 5 {
 					bindContent := buffer[5:n]
+					fmt.Printf("DEBUG: Bind message content length: %d, content (hex): %x\n", len(bindContent), bindContent)
 					portalName, statementName, params, err := parseBindMessage(bindContent)
 					if err == nil {
 						fmt.Printf("DEBUG: Bind for statement: %s, portal: %s\n", statementName, portalName)
@@ -406,6 +407,8 @@ func listenAndProxyData(src net.Conn, dst net.Conn, qs *store.QueryStore) {
 						} else {
 							fmt.Printf("DEBUG: Statement %s not found in prepared statements\n", statementName)
 						}
+					} else {
+						fmt.Printf("DEBUG: Error parsing Bind message: %v\n", err)
 					}
 				}
 			case ExecuteMessage:
