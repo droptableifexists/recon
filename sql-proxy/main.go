@@ -99,11 +99,16 @@ func parseBindMessage(data []byte) (portalName, statementName string, params []i
 	pos += 2
 	fmt.Printf("DEBUG: Number of parameter formats: %d\n", numFormats)
 
-	// Skip parameter format codes (each is 2 bytes)
+	// Read parameter format codes (each is 2 bytes)
+	formatCodes := make([]int16, numFormats)
 	if pos+numFormats*2 > len(data) {
 		return portalName, statementName, nil, fmt.Errorf("message too short for parameter formats")
 	}
-	pos += numFormats * 2
+	for i := 0; i < numFormats; i++ {
+		formatCodes[i] = int16(binary.BigEndian.Uint16(data[pos : pos+2]))
+		pos += 2
+	}
+	fmt.Printf("DEBUG: Format codes: %v\n", formatCodes)
 
 	// Read number of parameters
 	if pos+2 > len(data) {
@@ -135,8 +140,31 @@ func parseBindMessage(data []byte) (portalName, statementName string, params []i
 
 			// Read parameter value
 			paramValue := data[pos : pos+paramLength]
-			params = append(params, string(paramValue))
-			fmt.Printf("DEBUG: Parameter %d: '%s' (length: %d)\n", i+1, string(paramValue), paramLength)
+
+			// Determine format code for this parameter
+			formatCode := int16(0) // Default to text format
+			if i < len(formatCodes) {
+				formatCode = formatCodes[i]
+			} else if len(formatCodes) == 1 {
+				// If only one format code is provided, it applies to all parameters
+				formatCode = formatCodes[0]
+			}
+
+			// Decode parameter based on format code
+			var decodedParam interface{}
+			if formatCode == 0 {
+				// Text format - treat as string
+				decodedParam = string(paramValue)
+			} else if formatCode == 1 {
+				// Binary format - try to decode as appropriate type
+				decodedParam = decodeBinaryParameter(paramValue)
+			} else {
+				// Unknown format - treat as string
+				decodedParam = string(paramValue)
+			}
+
+			params = append(params, decodedParam)
+			fmt.Printf("DEBUG: Parameter %d: '%v' (length: %d, format: %d)\n", i+1, decodedParam, paramLength, formatCode)
 			pos += paramLength
 		} else {
 			return portalName, statementName, nil, fmt.Errorf("invalid parameter %d length: %d", i+1, paramLength)
@@ -145,6 +173,44 @@ func parseBindMessage(data []byte) (portalName, statementName string, params []i
 
 	fmt.Printf("DEBUG: Extracted %d parameters: %v\n", len(params), params)
 	return portalName, statementName, params, nil
+}
+
+// decodeBinaryParameter attempts to decode a binary parameter value
+func decodeBinaryParameter(data []byte) interface{} {
+	if len(data) == 0 {
+		return ""
+	}
+
+	// Try to decode as different types based on length and content
+	switch len(data) {
+	case 4:
+		// Could be int32, float32, or other 4-byte types
+		// Try as int32 first (most common)
+		value := int32(binary.BigEndian.Uint32(data))
+		return value
+	case 8:
+		// Could be int64, float64, or other 8-byte types
+		// Try as int64 first
+		value := int64(binary.BigEndian.Uint64(data))
+		return value
+	default:
+		// For other lengths, try to interpret as text or return as hex
+		// Check if it looks like text
+		isText := true
+		for _, b := range data {
+			if b < 32 && b != 9 && b != 10 && b != 13 { // Not printable ASCII
+				isText = false
+				break
+			}
+		}
+
+		if isText {
+			return string(data)
+		} else {
+			// Return as hex string for binary data
+			return fmt.Sprintf("\\x%x", data)
+		}
+	}
 }
 
 // readNullTerminatedString reads a null-terminated string from the data
