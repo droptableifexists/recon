@@ -194,7 +194,19 @@ func decodeBinaryParameter(data []byte) interface{} {
 		value := int64(binary.BigEndian.Uint64(data))
 		return value
 	default:
-		// For other lengths, try to interpret as text or return as hex
+		// For other lengths, check if it's a PostgreSQL array or numeric
+		if len(data) >= 4 {
+			// Check if it looks like a PostgreSQL array (starts with array header)
+			if data[0] == 0 && data[1] == 0 && data[2] == 0 && data[3] == 1 {
+				return decodePostgreSQLArray(data)
+			}
+
+			// Check if it looks like a PostgreSQL numeric (has specific header)
+			if len(data) >= 8 && (data[0] == 0 || data[0] == 0x80) {
+				return decodePostgreSQLNumeric(data)
+			}
+		}
+
 		// Check if it looks like text
 		isText := true
 		for _, b := range data {
@@ -211,6 +223,20 @@ func decodeBinaryParameter(data []byte) interface{} {
 			return fmt.Sprintf("\\x%x", data)
 		}
 	}
+}
+
+// decodePostgreSQLArray attempts to decode a PostgreSQL array
+func decodePostgreSQLArray(data []byte) interface{} {
+	// For now, return a simplified representation
+	// Full array decoding is complex and would require parsing the array header
+	return fmt.Sprintf("ARRAY[%d elements]", len(data))
+}
+
+// decodePostgreSQLNumeric attempts to decode a PostgreSQL numeric
+func decodePostgreSQLNumeric(data []byte) interface{} {
+	// For now, return a simplified representation
+	// Full numeric decoding is complex and would require parsing the numeric header
+	return fmt.Sprintf("NUMERIC[%d bytes]", len(data))
 }
 
 // readNullTerminatedString reads a null-terminated string from the data
@@ -289,10 +315,30 @@ func formatParameterizedQuery(query string, params []interface{}) string {
 	for i, param := range params {
 		placeholder := fmt.Sprintf("$%d", i+1)
 		cleanedParam := cleanParameter(param)
-		paramStr := fmt.Sprintf("%v", cleanedParam)
+		paramStr := formatParameterForDisplay(cleanedParam)
 		result = strings.ReplaceAll(result, placeholder, paramStr)
 	}
 	return result
+}
+
+// formatParameterForDisplay formats a parameter for display in SQL
+func formatParameterForDisplay(param interface{}) string {
+	if param == nil {
+		return "NULL"
+	}
+
+	switch v := param.(type) {
+	case string:
+		// Quote strings and escape single quotes
+		escaped := strings.ReplaceAll(v, "'", "''")
+		return fmt.Sprintf("'%s'", escaped)
+	case int32, int64, int:
+		// Numbers don't need quotes
+		return fmt.Sprintf("%v", v)
+	default:
+		// For other types, use the default formatting
+		return fmt.Sprintf("%v", v)
+	}
 }
 
 func main() {
