@@ -373,8 +373,8 @@ func test_multiline_sql_queries(pool *pgxpool.Pool) {
 	FROM (SELECT 1) as dummy
 	WHERE EXISTS (
 		SELECT 1 
-		FROM (SELECT $2::int) as sub 
-		WHERE sub > 0
+		FROM (SELECT $2::int as val) as sub 
+		WHERE sub.val > 0
 	);`
 
 	rows3, err := tx.Query(context.Background(), subquerySQL, "main_value", 25, "original_text")
