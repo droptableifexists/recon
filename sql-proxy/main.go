@@ -601,10 +601,12 @@ func listenAndProxyData(src net.Conn, dst net.Conn, qs *store.QueryStore) {
 					parseContent := buffer[5:n]
 					statementName, query, err := parseParseMessage(parseContent)
 					if err == nil && query != "" {
-						fmt.Printf("Parse Statement: %s -> %s\n", statementName, query)
+						// Clean the query for display
+						cleanedQuery := cleanQueryForDisplay(query)
+						fmt.Printf("Parse Statement: %s -> %s\n", statementName, cleanedQuery)
 						stmt := &PreparedStatement{
 							Name:  statementName,
-							Query: query,
+							Query: cleanedQuery,
 						}
 						getConnectionState(src).PreparedStatements[statementName] = stmt
 						getConnectionState(src).LastParseMessage = stmt // Store for use with empty statement names
