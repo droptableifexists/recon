@@ -364,6 +364,22 @@ func cleanParameter(param interface{}) interface{} {
 	cleaned = strings.ReplaceAll(cleaned, "\u0003", "")   // Remove ETX (End of Text)
 	cleaned = strings.ReplaceAll(cleaned, "\u0019", "")   // Remove ETB (End of Transmission Block)
 
+	// Convert Unicode escape sequences to readable characters
+	cleaned = strings.ReplaceAll(cleaned, "\\u003e", ">")  // Greater than
+	cleaned = strings.ReplaceAll(cleaned, "\\u003c", "<")  // Less than
+	cleaned = strings.ReplaceAll(cleaned, "\\u003d", "=")  // Equals
+	cleaned = strings.ReplaceAll(cleaned, "\\u0026", "&")  // Ampersand
+	cleaned = strings.ReplaceAll(cleaned, "\\u0027", "'")  // Single quote
+	cleaned = strings.ReplaceAll(cleaned, "\\u0022", "\"") // Double quote
+
+	// Also handle the actual Unicode characters (not escaped)
+	cleaned = strings.ReplaceAll(cleaned, "\u003e", ">")  // Greater than
+	cleaned = strings.ReplaceAll(cleaned, "\u003c", "<")  // Less than
+	cleaned = strings.ReplaceAll(cleaned, "\u003d", "=")  // Equals
+	cleaned = strings.ReplaceAll(cleaned, "\u0026", "&")  // Ampersand
+	cleaned = strings.ReplaceAll(cleaned, "\u0027", "'")  // Single quote
+	cleaned = strings.ReplaceAll(cleaned, "\u0022", "\"") // Double quote
+
 	// Only clean up formatting artifacts, preserve actual data
 	cleaned = strings.TrimSpace(cleaned)
 
@@ -397,6 +413,14 @@ func cleanParameterForJSON(param interface{}) interface{} {
 	cleaned = strings.ReplaceAll(cleaned, "\t", "\\u0009")       // Tab
 	cleaned = strings.ReplaceAll(cleaned, "\r", "\\u000d")       // Carriage return
 
+	// Handle Unicode escape sequences in JSON context
+	cleaned = strings.ReplaceAll(cleaned, "\\u003e", ">")  // Greater than
+	cleaned = strings.ReplaceAll(cleaned, "\\u003c", "<")  // Less than
+	cleaned = strings.ReplaceAll(cleaned, "\\u003d", "=")  // Equals
+	cleaned = strings.ReplaceAll(cleaned, "\\u0026", "&")  // Ampersand
+	cleaned = strings.ReplaceAll(cleaned, "\\u0027", "'")  // Single quote
+	cleaned = strings.ReplaceAll(cleaned, "\\u0022", "\"") // Double quote
+
 	return cleaned
 }
 
@@ -421,7 +445,15 @@ func formatParameterizedQuery(query string, params []interface{}) string {
 // cleanQueryForDisplay cleans up the final query for better display
 func cleanQueryForDisplay(query string) string {
 	// Replace Unicode escape sequences with readable characters
-	cleaned := strings.ReplaceAll(query, "\u003e", ">")   // Greater than
+	cleaned := strings.ReplaceAll(query, "\\u003e", ">")   // Greater than
+	cleaned = strings.ReplaceAll(cleaned, "\\u003c", "<")  // Less than
+	cleaned = strings.ReplaceAll(cleaned, "\\u003d", "=")  // Equals
+	cleaned = strings.ReplaceAll(cleaned, "\\u0026", "&")  // Ampersand
+	cleaned = strings.ReplaceAll(cleaned, "\\u0027", "'")  // Single quote
+	cleaned = strings.ReplaceAll(cleaned, "\\u0022", "\"") // Double quote
+
+	// Also handle the actual Unicode characters (not escaped)
+	cleaned = strings.ReplaceAll(cleaned, "\u003e", ">")  // Greater than
 	cleaned = strings.ReplaceAll(cleaned, "\u003c", "<")  // Less than
 	cleaned = strings.ReplaceAll(cleaned, "\u003d", "=")  // Equals
 	cleaned = strings.ReplaceAll(cleaned, "\u0026", "&")  // Ampersand
