@@ -106,89 +106,75 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Create artifacts directory
-	artifactsDir := "artifacts"
+	// Create individual JSON files in the root directory
+	fmt.Printf("DEBUG: Creating individual JSON files...\n")
 
-	// Debug: Show current working directory
-	if cwd, err := os.Getwd(); err == nil {
-		fmt.Printf("DEBUG: Current working directory: %s\n", cwd)
-	}
-
-	fmt.Printf("DEBUG: Creating artifacts directory: %s\n", artifactsDir)
-	if err := os.MkdirAll(artifactsDir, 0755); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to create artifacts directory: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Debug: Verify directory was created
-	if info, err := os.Stat(artifactsDir); err == nil && info.IsDir() {
-		fmt.Printf("DEBUG: Artifacts directory created successfully: %s\n", artifactsDir)
-	} else {
-		fmt.Fprintf(os.Stderr, "DEBUG: Failed to verify artifacts directory: %v\n", err)
-	}
-
-	// Write SQL queries artifact
-	sqlQueriesPath := artifactsDir + "/sql-queries.json"
+	// SQL queries artifact
+	sqlQueriesPath := "sql-queries.json"
 	fmt.Printf("DEBUG: Writing SQL queries to: %s\n", sqlQueriesPath)
 	if err := os.WriteFile(sqlQueriesPath, body, 0644); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to write sql-queries.json artifact: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Failed to write sql-queries.json: %v\n", err)
 		os.Exit(1)
 	}
 	fmt.Printf("DEBUG: Successfully wrote sql-queries.json (%d bytes)\n", len(body))
 
-	// Write queries diff artifact
-	queriesDiffPath := artifactsDir + "/queries-diff.json"
+	// Queries diff artifact
+	queriesDiffPath := "queries-diff.json"
 	fmt.Printf("DEBUG: Writing queries diff to: %s\n", queriesDiffPath)
 	if err := os.WriteFile(queriesDiffPath, queryWithPlansJSON, 0644); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to write queries-diff.json artifact: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Failed to write queries-diff.json: %v\n", err)
 		os.Exit(1)
 	}
 	fmt.Printf("DEBUG: Successfully wrote queries-diff.json (%d bytes)\n", len(queryWithPlansJSON))
 
-	// Write schema artifact
-	schemaPath := artifactsDir + "/full-schema.json"
+	// Schema artifact
+	schemaPath := "full-schema.json"
 	fmt.Printf("DEBUG: Writing schema to: %s\n", schemaPath)
 	if err := os.WriteFile(schemaPath, schemaJSON, 0644); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to write full-schema.json artifact: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Failed to write full-schema.json: %v\n", err)
 		os.Exit(1)
 	}
 	fmt.Printf("DEBUG: Successfully wrote full-schema.json (%d bytes)\n", len(schemaJSON))
 
-	// Write schema diff artifact
-	schemaDiffPath := artifactsDir + "/schema-diff.json"
+	// Schema diff artifact
+	schemaDiffPath := "schema-diff.json"
 	fmt.Printf("DEBUG: Writing schema diff to: %s\n", schemaDiffPath)
 	if err := os.WriteFile(schemaDiffPath, schemaDiffJSON, 0644); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to write schema-diff.json artifact: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Failed to write schema-diff.json: %v\n", err)
 		os.Exit(1)
 	}
 	fmt.Printf("DEBUG: Successfully wrote schema-diff.json (%d bytes)\n", len(schemaDiffJSON))
 
-	// Debug: List all files in artifacts directory
-	fmt.Printf("DEBUG: Listing contents of artifacts directory:\n")
-	if entries, err := os.ReadDir(artifactsDir); err == nil {
-		for _, entry := range entries {
-			if info, err := entry.Info(); err == nil {
-				fmt.Printf("DEBUG:   %s (%d bytes)\n", entry.Name(), info.Size())
-			} else {
-				fmt.Printf("DEBUG:   %s (size unknown)\n", entry.Name())
-			}
-		}
-	} else {
-		fmt.Printf("DEBUG: Failed to read artifacts directory: %v\n", err)
-	}
-
-	fmt.Println("Successfully created artifacts:")
+	fmt.Println("Successfully created JSON files:")
 	fmt.Println("- sql-queries.json")
 	fmt.Println("- queries-diff.json")
 	fmt.Println("- full-schema.json")
 	fmt.Println("- schema-diff.json")
 	fmt.Println("")
-	fmt.Println("To upload these as GitHub Actions artifacts, add this step to your workflow:")
-	fmt.Println("- name: Upload artifacts")
+	fmt.Println("To upload these as individual GitHub Actions artifacts, add these steps to your workflow:")
+	fmt.Println("- name: Upload SQL queries")
 	fmt.Println("  uses: actions/upload-artifact@v4")
 	fmt.Println("  with:")
-	fmt.Println("    name: sql-analysis-artifacts")
-	fmt.Println("    path: artifacts/")
+	fmt.Println("    name: sql-queries")
+	fmt.Println("    path: sql-queries.json")
+	fmt.Println("")
+	fmt.Println("- name: Upload queries diff")
+	fmt.Println("  uses: actions/upload-artifact@v4")
+	fmt.Println("  with:")
+	fmt.Println("    name: queries-diff")
+	fmt.Println("    path: queries-diff.json")
+	fmt.Println("")
+	fmt.Println("- name: Upload full schema")
+	fmt.Println("  uses: actions/upload-artifact@v4")
+	fmt.Println("  with:")
+	fmt.Println("    name: full-schema")
+	fmt.Println("    path: full-schema.json")
+	fmt.Println("")
+	fmt.Println("- name: Upload schema diff")
+	fmt.Println("  uses: actions/upload-artifact@v4")
+	fmt.Println("  with:")
+	fmt.Println("    name: schema-diff")
+	fmt.Println("    path: schema-diff.json")
 }
 
 // Fetch and extract the sql-queries-main artifact content (JSON string)

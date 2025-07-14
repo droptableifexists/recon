@@ -51,3 +51,32 @@ runs:
       run: |
         chmod +x ./recon/recon
         ./recon/recon
+
+    - name: Upload SQL queries
+      uses: actions/upload-artifact@v4
+      with:
+        name: sql-queries
+        path: sql-queries.json
+        retention-days: 30
+
+    - name: Upload queries diff
+      uses: actions/upload-artifact@v4
+      with:
+        name: queries-diff
+        path: queries-diff.json
+        retention-days: 30
+
+    - name: Upload full schema
+      uses: actions/upload-artifact@v4
+      with:
+        name: full-schema
+        path: full-schema.json
+        retention-days: 30
+
+    - name: Upload schema diff
+      uses: actions/upload-artifact@v4
+      with:
+        name: schema-diff
+        path: schema-diff.json
+        retention-days: 30
+
