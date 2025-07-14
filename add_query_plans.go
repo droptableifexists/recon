@@ -26,9 +26,9 @@ func AddQueryPlansForChanges(connStr string, queries []Query) []QueryWithPlan {
 		err := db.QueryRow("EXPLAIN ANALYZE " + query.Query).Scan(&plan)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to get plan for query: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Invalid query: %s\n", query.Query)
 			continue
 		}
-		fmt.Printf("Plan for query: %s\n%s\n", query.Query, plan)
 		queryWithPlans = append(queryWithPlans, QueryWithPlan{Query: query.Query, Plan: plan})
 	}
 	return queryWithPlans
