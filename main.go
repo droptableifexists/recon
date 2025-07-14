@@ -2,11 +2,13 @@ package main
 
 import (
 	"archive/zip"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -106,24 +108,144 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Write to GITHUB_OUTPUT
-	outputPath := os.Getenv("GITHUB_OUTPUT")
-	if outputPath == "" {
-		fmt.Fprintf(os.Stderr, "GITHUB_OUTPUT not set\n")
+	// Create artifacts directory
+	artifactsDir := "artifacts"
+	if err := os.MkdirAll(artifactsDir, 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create artifacts directory: %v\n", err)
 		os.Exit(1)
 	}
 
-	output := fmt.Sprintf("sql-queries=%s\nqueries-diff=%s\nschema=%s\nschema-diff=%s\n",
-		escapeMultiline(string(body)),
-		escapeMultiline(string(queryWithPlansJSON)),
-		escapeMultiline(string(schemaJSON)),
-		escapeMultiline(string(schemaDiffJSON)))
-	if err := os.WriteFile(outputPath, []byte(output), 0644); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to write GITHUB_OUTPUT: %v\n", err)
+	// Write SQL queries artifact
+	if err := os.WriteFile(artifactsDir+"/sql-queries.json", body, 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to write sql-queries.json artifact: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Println("Successfully wrote queries, diff, and schema to GITHUB_OUTPUT.")
+	// Write queries diff artifact
+	if err := os.WriteFile(artifactsDir+"/queries-diff.json", queryWithPlansJSON, 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to write queries-diff.json artifact: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Write schema artifact
+	if err := os.WriteFile(artifactsDir+"/full-schema.json", schemaJSON, 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to write full-schema.json artifact: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Write schema diff artifact
+	if err := os.WriteFile(artifactsDir+"/schema-diff.json", schemaDiffJSON, 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to write schema-diff.json artifact: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Upload artifacts to GitHub Actions
+	if err := uploadArtifactsToGitHub(artifactsDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: Failed to upload artifacts to GitHub: %v\n", err)
+		// Don't exit on failure - artifacts are still created locally
+	} else {
+		fmt.Println("Successfully uploaded artifacts to GitHub Actions")
+	}
+
+	fmt.Println("Successfully created artifacts:")
+	fmt.Println("- sql-queries.json")
+	fmt.Println("- queries-diff.json")
+	fmt.Println("- full-schema.json")
+	fmt.Println("- schema-diff.json")
+}
+
+// uploadArtifactsToGitHub uploads the artifacts directory to GitHub Actions
+func uploadArtifactsToGitHub(artifactsDir string) error {
+	// Check if we're running in GitHub Actions
+	runID := os.Getenv("GITHUB_RUN_ID")
+	repo := os.Getenv("GITHUB_REPOSITORY")
+	token := os.Getenv("GITHUB_TOKEN")
+
+	if runID == "" || repo == "" || token == "" {
+		return fmt.Errorf("not running in GitHub Actions or missing required environment variables")
+	}
+
+	// Create a ZIP file of the artifacts directory
+	zipPath := artifactsDir + ".zip"
+	if err := createZipFile(artifactsDir, zipPath); err != nil {
+		return fmt.Errorf("failed to create zip file: %v", err)
+	}
+	defer os.Remove(zipPath) // Clean up the zip file
+
+	// Read the zip file
+	zipData, err := os.ReadFile(zipPath)
+	if err != nil {
+		return fmt.Errorf("failed to read zip file: %v", err)
+	}
+
+	// Upload to GitHub Actions artifacts API
+	apiURL := fmt.Sprintf("https://uploads.github.com/repos/%s/actions/runs/%s/artifacts", repo, runID)
+	req, err := http.NewRequest("POST", apiURL, bytes.NewReader(zipData))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %v", err)
+	}
+
+	req.Header.Set("Authorization", "token "+token)
+	req.Header.Set("Content-Type", "application/zip")
+	req.Header.Set("Content-Length", fmt.Sprintf("%d", len(zipData)))
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to upload artifact: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("upload failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// createZipFile creates a ZIP file from a directory
+func createZipFile(sourceDir, zipPath string) error {
+	zipFile, err := os.Create(zipPath)
+	if err != nil {
+		return err
+	}
+	defer zipFile.Close()
+
+	zipWriter := zip.NewWriter(zipFile)
+	defer zipWriter.Close()
+
+	return filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Skip directories
+		if info.IsDir() {
+			return nil
+		}
+
+		// Create relative path for the file in the zip
+		relPath, err := filepath.Rel(sourceDir, path)
+		if err != nil {
+			return err
+		}
+
+		// Create zip file entry
+		zipEntry, err := zipWriter.Create(relPath)
+		if err != nil {
+			return err
+		}
+
+		// Read and write file content
+		fileContent, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+
+		_, err = zipEntry.Write(fileContent)
+		return err
+	})
 }
 
 // Fetch and extract the sql-queries-main artifact content (JSON string)
