@@ -2,13 +2,11 @@ package main
 
 import (
 	"archive/zip"
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -139,113 +137,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Upload artifacts to GitHub Actions
-	if err := uploadArtifactsToGitHub(artifactsDir); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: Failed to upload artifacts to GitHub: %v\n", err)
-		// Don't exit on failure - artifacts are still created locally
-	} else {
-		fmt.Println("Successfully uploaded artifacts to GitHub Actions")
-	}
-
 	fmt.Println("Successfully created artifacts:")
 	fmt.Println("- sql-queries.json")
 	fmt.Println("- queries-diff.json")
 	fmt.Println("- full-schema.json")
 	fmt.Println("- schema-diff.json")
-}
-
-// uploadArtifactsToGitHub uploads the artifacts directory to GitHub Actions
-func uploadArtifactsToGitHub(artifactsDir string) error {
-	// Check if we're running in GitHub Actions
-	runID := os.Getenv("GITHUB_RUN_ID")
-	repo := os.Getenv("GITHUB_REPOSITORY")
-	token := os.Getenv("GITHUB_TOKEN")
-
-	if runID == "" || repo == "" || token == "" {
-		return fmt.Errorf("not running in GitHub Actions or missing required environment variables")
-	}
-
-	// Create a ZIP file of the artifacts directory
-	zipPath := artifactsDir + ".zip"
-	if err := createZipFile(artifactsDir, zipPath); err != nil {
-		return fmt.Errorf("failed to create zip file: %v", err)
-	}
-	defer os.Remove(zipPath) // Clean up the zip file
-
-	// Read the zip file
-	zipData, err := os.ReadFile(zipPath)
-	if err != nil {
-		return fmt.Errorf("failed to read zip file: %v", err)
-	}
-
-	// Upload to GitHub Actions artifacts API
-	apiURL := fmt.Sprintf("https://uploads.github.com/repos/%s/actions/runs/%s/artifacts", repo, runID)
-	req, err := http.NewRequest("POST", apiURL, bytes.NewReader(zipData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %v", err)
-	}
-
-	req.Header.Set("Authorization", "token "+token)
-	req.Header.Set("Content-Type", "application/zip")
-	req.Header.Set("Content-Length", fmt.Sprintf("%d", len(zipData)))
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to upload artifact: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("upload failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	return nil
-}
-
-// createZipFile creates a ZIP file from a directory
-func createZipFile(sourceDir, zipPath string) error {
-	zipFile, err := os.Create(zipPath)
-	if err != nil {
-		return err
-	}
-	defer zipFile.Close()
-
-	zipWriter := zip.NewWriter(zipFile)
-	defer zipWriter.Close()
-
-	return filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		// Skip directories
-		if info.IsDir() {
-			return nil
-		}
-
-		// Create relative path for the file in the zip
-		relPath, err := filepath.Rel(sourceDir, path)
-		if err != nil {
-			return err
-		}
-
-		// Create zip file entry
-		zipEntry, err := zipWriter.Create(relPath)
-		if err != nil {
-			return err
-		}
-
-		// Read and write file content
-		fileContent, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-
-		_, err = zipEntry.Write(fileContent)
-		return err
-	})
+	fmt.Println("")
+	fmt.Println("To upload these as GitHub Actions artifacts, add this step to your workflow:")
+	fmt.Println("- name: Upload artifacts")
+	fmt.Println("  uses: actions/upload-artifact@v4")
+	fmt.Println("  with:")
+	fmt.Println("    name: sql-analysis-artifacts")
+	fmt.Println("    path: artifacts/")
 }
 
 // Fetch and extract the sql-queries-main artifact content (JSON string)
@@ -405,13 +308,4 @@ func diffQueries(current, baseline string) []Query {
 	}
 
 	return newQueries
-}
-
-// Escape multiline output for GitHub output file
-func escapeMultiline(input string) string {
-	s := strings.ReplaceAll(input, "%", "%25")
-	s = strings.ReplaceAll(s, "\n", "%0A")
-	s = strings.ReplaceAll(s, "\r", "%0D")
-	fmt.Print("s: ", s)
-	return s
 }
