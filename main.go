@@ -108,33 +108,73 @@ func main() {
 
 	// Create artifacts directory
 	artifactsDir := "artifacts"
+
+	// Debug: Show current working directory
+	if cwd, err := os.Getwd(); err == nil {
+		fmt.Printf("DEBUG: Current working directory: %s\n", cwd)
+	}
+
+	fmt.Printf("DEBUG: Creating artifacts directory: %s\n", artifactsDir)
 	if err := os.MkdirAll(artifactsDir, 0755); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create artifacts directory: %v\n", err)
 		os.Exit(1)
 	}
 
+	// Debug: Verify directory was created
+	if info, err := os.Stat(artifactsDir); err == nil && info.IsDir() {
+		fmt.Printf("DEBUG: Artifacts directory created successfully: %s\n", artifactsDir)
+	} else {
+		fmt.Fprintf(os.Stderr, "DEBUG: Failed to verify artifacts directory: %v\n", err)
+	}
+
 	// Write SQL queries artifact
-	if err := os.WriteFile(artifactsDir+"/sql-queries.json", body, 0644); err != nil {
+	sqlQueriesPath := artifactsDir + "/sql-queries.json"
+	fmt.Printf("DEBUG: Writing SQL queries to: %s\n", sqlQueriesPath)
+	if err := os.WriteFile(sqlQueriesPath, body, 0644); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to write sql-queries.json artifact: %v\n", err)
 		os.Exit(1)
 	}
+	fmt.Printf("DEBUG: Successfully wrote sql-queries.json (%d bytes)\n", len(body))
 
 	// Write queries diff artifact
-	if err := os.WriteFile(artifactsDir+"/queries-diff.json", queryWithPlansJSON, 0644); err != nil {
+	queriesDiffPath := artifactsDir + "/queries-diff.json"
+	fmt.Printf("DEBUG: Writing queries diff to: %s\n", queriesDiffPath)
+	if err := os.WriteFile(queriesDiffPath, queryWithPlansJSON, 0644); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to write queries-diff.json artifact: %v\n", err)
 		os.Exit(1)
 	}
+	fmt.Printf("DEBUG: Successfully wrote queries-diff.json (%d bytes)\n", len(queryWithPlansJSON))
 
 	// Write schema artifact
-	if err := os.WriteFile(artifactsDir+"/full-schema.json", schemaJSON, 0644); err != nil {
+	schemaPath := artifactsDir + "/full-schema.json"
+	fmt.Printf("DEBUG: Writing schema to: %s\n", schemaPath)
+	if err := os.WriteFile(schemaPath, schemaJSON, 0644); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to write full-schema.json artifact: %v\n", err)
 		os.Exit(1)
 	}
+	fmt.Printf("DEBUG: Successfully wrote full-schema.json (%d bytes)\n", len(schemaJSON))
 
 	// Write schema diff artifact
-	if err := os.WriteFile(artifactsDir+"/schema-diff.json", schemaDiffJSON, 0644); err != nil {
+	schemaDiffPath := artifactsDir + "/schema-diff.json"
+	fmt.Printf("DEBUG: Writing schema diff to: %s\n", schemaDiffPath)
+	if err := os.WriteFile(schemaDiffPath, schemaDiffJSON, 0644); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to write schema-diff.json artifact: %v\n", err)
 		os.Exit(1)
+	}
+	fmt.Printf("DEBUG: Successfully wrote schema-diff.json (%d bytes)\n", len(schemaDiffJSON))
+
+	// Debug: List all files in artifacts directory
+	fmt.Printf("DEBUG: Listing contents of artifacts directory:\n")
+	if entries, err := os.ReadDir(artifactsDir); err == nil {
+		for _, entry := range entries {
+			if info, err := entry.Info(); err == nil {
+				fmt.Printf("DEBUG:   %s (%d bytes)\n", entry.Name(), info.Size())
+			} else {
+				fmt.Printf("DEBUG:   %s (size unknown)\n", entry.Name())
+			}
+		}
+	} else {
+		fmt.Printf("DEBUG: Failed to read artifacts directory: %v\n", err)
 	}
 
 	fmt.Println("Successfully created artifacts:")
