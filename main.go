@@ -70,18 +70,14 @@ func main() {
 	// Generate JSON diff
 	queryDiff := diffQueries(string(body), queriesBaseline)
 
-	connStr := os.Getenv("DB_CONNECTION_STRING")
-	database := os.Getenv("DEFAULT_DATABASE")
-	connStr = fmt.Sprintf("%s dbname=%s", connStr, database)
-	queryWithPlans := AddQueryPlansForChanges(connStr, queryDiff)
-
-	queryWithPlansJSON, err := json.Marshal(queryWithPlans)
+	// Just use the new queries without plans
+	queryDiffJSON, err := json.Marshal(queryDiff)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to marshal query with plans: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Failed to marshal query diff: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Print(string(queryWithPlansJSON))
+	fmt.Print(string(queryDiffJSON))
 
 	// Generate schema SQL
 	databaseSchema := GetDatabaseSchema(os.Getenv("DB_CONNECTION_STRING"))
@@ -121,11 +117,11 @@ func main() {
 	// Queries diff artifact
 	queriesDiffPath := "queries-diff.json"
 	fmt.Printf("DEBUG: Writing queries diff to: %s\n", queriesDiffPath)
-	if err := os.WriteFile(queriesDiffPath, queryWithPlansJSON, 0644); err != nil {
+	if err := os.WriteFile(queriesDiffPath, queryDiffJSON, 0644); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to write queries-diff.json: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("DEBUG: Successfully wrote queries-diff.json (%d bytes)\n", len(queryWithPlansJSON))
+	fmt.Printf("DEBUG: Successfully wrote queries-diff.json (%d bytes)\n", len(queryDiffJSON))
 
 	// Schema artifact
 	schemaPath := "full-schema.json"
