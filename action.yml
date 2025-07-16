@@ -16,6 +16,10 @@ inputs:
   GITHUB_TOKEN:
     description: "The github token to use"
     required: true
+  TEST_SUITE_NAME:
+    description: "The name of the test suite being run (used for unique artifact names)"
+    required: false
+    default: "default"
 outputs:
   sql-queries:
     description: "A list of all the sql queries executed."
@@ -48,6 +52,7 @@ runs:
         DEFAULT_DATABASE: ${{ inputs.DEFAULT_DATABASE }}
         GITHUB_REPOSITORY: ${{ inputs.GITHUB_REPOSITORY }}
         GITHUB_TOKEN: ${{ inputs.GITHUB_TOKEN }}
+        TEST_SUITE_NAME: ${{ inputs.TEST_SUITE_NAME }}
       run: |
         chmod +x ./recon/recon
         ./recon/recon
@@ -55,7 +60,7 @@ runs:
     - name: Upload SQL queries
       uses: actions/upload-artifact@v4
       with:
-        name: sql-queries
+        name: sql-queries-${{ inputs.TEST_SUITE_NAME }}
         path: sql-queries.json
         retention-days: 30
         overwrite: true
@@ -63,7 +68,7 @@ runs:
     - name: Upload queries diff
       uses: actions/upload-artifact@v4
       with:
-        name: queries-diff
+        name: queries-diff-${{ inputs.TEST_SUITE_NAME }}
         path: queries-diff.json
         retention-days: 30
         overwrite: true
@@ -71,7 +76,7 @@ runs:
     - name: Upload full schema
       uses: actions/upload-artifact@v4
       with:
-        name: full-schema
+        name: full-schema-${{ inputs.TEST_SUITE_NAME }}
         path: full-schema.json
         retention-days: 30
         overwrite: true
@@ -79,7 +84,7 @@ runs:
     - name: Upload schema diff
       uses: actions/upload-artifact@v4
       with:
-        name: schema-diff
+        name: schema-diff-${{ inputs.TEST_SUITE_NAME }}
         path: schema-diff.json
         retention-days: 30
         overwrite: true

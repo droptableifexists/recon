@@ -65,7 +65,11 @@ func main() {
 	}
 
 	// Fetch baseline artifact queries (optional)
-	queriesBaseline := getArtifactFromMain("sql-queries")
+	testSuiteName := os.Getenv("TEST_SUITE_NAME")
+	if testSuiteName == "" {
+		testSuiteName = "default"
+	}
+	queriesBaseline := getArtifactFromMain("sql-queries", testSuiteName)
 
 	// Generate JSON diff
 	queryDiff := diffQueries(string(body), queriesBaseline)
@@ -87,7 +91,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	schemaBaseline := getArtifactFromMain("full-schema")
+	schemaBaseline := getArtifactFromMain("full-schema", testSuiteName)
 
 	// Parse the baseline schema from JSON string
 	var baselineSchema []DatabaseSchema
@@ -174,7 +178,7 @@ func main() {
 }
 
 // Fetch and extract the sql-queries-main artifact content (JSON string)
-func getArtifactFromMain(name string) string {
+func getArtifactFromMain(name string, testSuiteName string) string {
 	repo := os.Getenv("GITHUB_REPOSITORY") // owner/repo
 	token := os.Getenv("GITHUB_TOKEN")     // GitHub token
 
@@ -230,8 +234,10 @@ func getArtifactFromMain(name string) string {
 	for _, a := range artifactsResp.Artifacts {
 		// Check if this is a main branch artifact
 		if a.WorkflowRun.HeadBranch == "main" {
-			// Check if name matches what we're looking for
-			if strings.Contains(strings.ToLower(a.Name), strings.ToLower(name)) {
+			// Check if name matches what we're looking for (base name + service name)
+			baseNameMatch := strings.Contains(strings.ToLower(a.Name), strings.ToLower(name))
+			serviceNameMatch := strings.Contains(strings.ToLower(a.Name), strings.ToLower(testSuiteName))
+			if baseNameMatch && serviceNameMatch {
 				candidates = append(candidates, a)
 			}
 		}
