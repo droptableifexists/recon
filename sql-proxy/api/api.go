@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/droptableifexists/recon/sql-proxy/store"
 )
@@ -29,6 +30,25 @@ func (api QueriesExecutedAPI) RunApi() {
 
 		if err := encoder.Encode(api.queryStore.ListQueries()); err != nil {
 			fmt.Printf("Error encoding JSON: %v\n", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+		}
+	})
+
+	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+
+		response := map[string]interface{}{
+			"status":    "healthy",
+			"timestamp": time.Now().UTC().Format(time.RFC3339),
+			"service":   "sql-proxy-api",
+		}
+
+		encoder := json.NewEncoder(w)
+		encoder.SetEscapeHTML(false)
+
+		if err := encoder.Encode(response); err != nil {
+			fmt.Printf("Error encoding health check JSON: %v\n", err)
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 		}
 	})
