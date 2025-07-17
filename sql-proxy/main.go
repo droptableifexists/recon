@@ -67,7 +67,25 @@ func removeConnectionState(conn net.Conn) {
 
 // cleanupInactiveConnections removes connections that have been inactive for too long
 func cleanupInactiveConnections() {
-	ticker := time.NewTicker(5 * time.Minute) // Clean up every 5 minutes
+	// Get cleanup configuration from environment
+	cleanupInterval := getEnv("CLEANUP_INTERVAL", "30s")
+	cleanupTimeout := getEnv("CLEANUP_TIMEOUT", "2m")
+
+	interval, err := time.ParseDuration(cleanupInterval)
+	if err != nil {
+		interval = 30 * time.Second
+		fmt.Printf("Invalid CLEANUP_INTERVAL, using default: 30s\n")
+	}
+
+	timeout, err := time.ParseDuration(cleanupTimeout)
+	if err != nil {
+		timeout = 2 * time.Minute
+		fmt.Printf("Invalid CLEANUP_TIMEOUT, using default: 2m\n")
+	}
+
+	fmt.Printf("Starting connection cleanup: interval=%v, timeout=%v\n", interval, timeout)
+
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for range ticker.C {
@@ -76,8 +94,8 @@ func cleanupInactiveConnections() {
 		var toRemove []net.Conn
 
 		for conn, state := range connectionStates {
-			// Remove connections inactive for more than 30 minutes
-			if now.Sub(state.LastActivity) > 30*time.Minute {
+			// Remove connections inactive for longer than the configured timeout
+			if now.Sub(state.LastActivity) > timeout {
 				toRemove = append(toRemove, conn)
 			}
 		}
