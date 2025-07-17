@@ -143,9 +143,6 @@ func parseParseMessage(data []byte) (statementName, query string, err error) {
 // parseBindMessage extracts parameters from a Bind message
 // Based on PostgreSQL protocol specification: https://www.postgresql.org/docs/current/protocol-message-formats.html
 func parseBindMessage(data []byte) (portalName, statementName string, params []interface{}, err error) {
-	// Debug: Print the raw data
-	fmt.Printf("DEBUG: Bind message raw data (hex): %x\n", data)
-
 	// PostgreSQL Bind message format (from official spec):
 	// Int32 - Length of message contents in bytes, including self
 	// String - Portal name (can be empty)
@@ -166,15 +163,12 @@ func parseBindMessage(data []byte) (portalName, statementName string, params []i
 	// Read statement name (null-terminated string)
 	statementName, pos = readNullTerminatedString(data, pos)
 
-	fmt.Printf("DEBUG: Portal: '%s', Statement: '%s', Position: %d\n", portalName, statementName, pos)
-
 	// Read number of parameter format codes
 	if pos+2 > len(data) {
 		return portalName, statementName, nil, fmt.Errorf("message too short for parameter format count")
 	}
 	numFormats := int(binary.BigEndian.Uint16(data[pos : pos+2]))
 	pos += 2
-	fmt.Printf("DEBUG: Number of parameter formats: %d\n", numFormats)
 
 	// Read parameter format codes (each is 2 bytes)
 	formatCodes := make([]int16, numFormats)
@@ -185,7 +179,6 @@ func parseBindMessage(data []byte) (portalName, statementName string, params []i
 		formatCodes[i] = int16(binary.BigEndian.Uint16(data[pos : pos+2]))
 		pos += 2
 	}
-	fmt.Printf("DEBUG: Format codes: %v\n", formatCodes)
 
 	// Read number of parameters
 	if pos+2 > len(data) {
@@ -193,7 +186,6 @@ func parseBindMessage(data []byte) (portalName, statementName string, params []i
 	}
 	numParams := int(binary.BigEndian.Uint16(data[pos : pos+2]))
 	pos += 2
-	fmt.Printf("DEBUG: Number of parameters: %d\n", numParams)
 
 	// Read parameter lengths and values
 	for i := 0; i < numParams; i++ {
@@ -204,12 +196,10 @@ func parseBindMessage(data []byte) (portalName, statementName string, params []i
 		// Read parameter length (signed int32)
 		paramLength := int(int32(binary.BigEndian.Uint32(data[pos : pos+4])))
 		pos += 4
-		fmt.Printf("DEBUG: Parameter %d length: %d\n", i+1, paramLength)
 
 		if paramLength == -1 {
 			// NULL parameter
 			params = append(params, nil)
-			fmt.Printf("DEBUG: Parameter %d: NULL\n", i+1)
 		} else if paramLength >= 0 {
 			if pos+paramLength > len(data) {
 				return portalName, statementName, nil, fmt.Errorf("message too short for parameter %d value", i+1)
@@ -241,14 +231,12 @@ func parseBindMessage(data []byte) (portalName, statementName string, params []i
 			}
 
 			params = append(params, decodedParam)
-			fmt.Printf("DEBUG: Parameter %d: '%v' (length: %d, format: %d)\n", i+1, decodedParam, paramLength, formatCode)
 			pos += paramLength
 		} else {
 			return portalName, statementName, nil, fmt.Errorf("invalid parameter %d length: %d", i+1, paramLength)
 		}
 	}
 
-	fmt.Printf("DEBUG: Extracted %d parameters: %v\n", len(params), params)
 	return portalName, statementName, params, nil
 }
 
@@ -753,7 +741,6 @@ func listenAndProxyData(src net.Conn, dst net.Conn, qs *store.QueryStore) {
 		// Process the message if it's a PostgreSQL protocol message
 		if n > 0 {
 			messageType := buffer[0]
-			fmt.Printf("DEBUG: Processing message type: %c (0x%02x)\n", messageType, messageType)
 
 			switch messageType {
 			case QueryMessage:
@@ -762,7 +749,6 @@ func listenAndProxyData(src net.Conn, dst net.Conn, qs *store.QueryStore) {
 					queryContent := bytes.Trim(buffer[5:n], "\x00")
 					query := string(queryContent)
 					if query != "" {
-						fmt.Printf("Simple Query: %s\n", query)
 						qs.AddQuery(store.QueryExecuted{
 							Query: query,
 						})
@@ -776,7 +762,6 @@ func listenAndProxyData(src net.Conn, dst net.Conn, qs *store.QueryStore) {
 					if err == nil && query != "" {
 						// Clean the query for display
 						cleanedQuery := cleanQueryForDisplay(query)
-						fmt.Printf("Parse Statement: %s -> %s\n", statementName, cleanedQuery)
 						stmt := &PreparedStatement{
 							Name:  statementName,
 							Query: cleanedQuery,
@@ -789,10 +774,8 @@ func listenAndProxyData(src net.Conn, dst net.Conn, qs *store.QueryStore) {
 				// Extended protocol - Bind message (parameters)
 				if n > 5 {
 					bindContent := buffer[5:n]
-					fmt.Printf("DEBUG: Bind message content length: %d, content (hex): %x\n", len(bindContent), bindContent)
-					portalName, statementName, params, err := parseBindMessage(bindContent)
+					_, statementName, params, err := parseBindMessage(bindContent)
 					if err == nil {
-						fmt.Printf("DEBUG: Bind for statement: %s, portal: %s\n", statementName, portalName)
 
 						var stmt *PreparedStatement
 						var exists bool
@@ -808,20 +791,14 @@ func listenAndProxyData(src net.Conn, dst net.Conn, qs *store.QueryStore) {
 						if exists {
 							stmt.Params = params
 							formattedQuery := formatParameterizedQuery(stmt.Query, params)
-							fmt.Printf("Bind Parameters: %s -> %s\n", portalName, formattedQuery)
 							qs.AddQuery(store.QueryExecuted{
 								Query: formattedQuery,
 							})
-						} else {
-							fmt.Printf("DEBUG: Statement %s not found in prepared statements\n", statementName)
 						}
-					} else {
-						fmt.Printf("DEBUG: Error parsing Bind message: %v\n", err)
 					}
 				}
 			case ExecuteMessage:
 				// Extended protocol - Execute message
-				fmt.Printf("Execute Statement\n")
 			}
 		}
 

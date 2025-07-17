@@ -107,43 +107,35 @@ func main() {
 	}
 
 	// Create individual JSON files in the root directory
-	fmt.Printf("DEBUG: Creating individual JSON files...\n")
+	fmt.Printf("Creating JSON files...\n")
 
 	// SQL queries artifact
 	sqlQueriesPath := "sql-queries.json"
-	fmt.Printf("DEBUG: Writing SQL queries to: %s\n", sqlQueriesPath)
 	if err := os.WriteFile(sqlQueriesPath, body, 0644); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to write sql-queries.json: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("DEBUG: Successfully wrote sql-queries.json (%d bytes)\n", len(body))
 
 	// Queries diff artifact
 	queriesDiffPath := "queries-diff.json"
-	fmt.Printf("DEBUG: Writing queries diff to: %s\n", queriesDiffPath)
 	if err := os.WriteFile(queriesDiffPath, queryDiffJSON, 0644); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to write queries-diff.json: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("DEBUG: Successfully wrote queries-diff.json (%d bytes)\n", len(queryDiffJSON))
 
 	// Schema artifact
 	schemaPath := "full-schema.json"
-	fmt.Printf("DEBUG: Writing schema to: %s\n", schemaPath)
 	if err := os.WriteFile(schemaPath, schemaJSON, 0644); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to write full-schema.json: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("DEBUG: Successfully wrote full-schema.json (%d bytes)\n", len(schemaJSON))
 
 	// Schema diff artifact
 	schemaDiffPath := "schema-diff.json"
-	fmt.Printf("DEBUG: Writing schema diff to: %s\n", schemaDiffPath)
 	if err := os.WriteFile(schemaDiffPath, schemaDiffJSON, 0644); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to write schema-diff.json: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("DEBUG: Successfully wrote schema-diff.json (%d bytes)\n", len(schemaDiffJSON))
 
 	fmt.Println("Successfully created JSON files:")
 	fmt.Println("- sql-queries.json")
