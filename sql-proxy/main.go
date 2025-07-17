@@ -8,6 +8,8 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/droptableifexists/recon/sql-proxy/api"
 	"github.com/droptableifexists/recon/sql-proxy/store"
@@ -35,19 +37,61 @@ type PreparedStatement struct {
 type ConnectionState struct {
 	PreparedStatements map[string]*PreparedStatement
 	LastParseMessage   *PreparedStatement
+	LastActivity       time.Time
 }
 
 var connectionStates = make(map[net.Conn]*ConnectionState)
+var connectionMutex sync.RWMutex
 
 func getConnectionState(conn net.Conn) *ConnectionState {
+	connectionMutex.Lock()
+	defer connectionMutex.Unlock()
+
 	if state, exists := connectionStates[conn]; exists {
+		state.LastActivity = time.Now()
 		return state
 	}
 	state := &ConnectionState{
 		PreparedStatements: make(map[string]*PreparedStatement),
+		LastActivity:       time.Now(),
 	}
 	connectionStates[conn] = state
 	return state
+}
+
+func removeConnectionState(conn net.Conn) {
+	connectionMutex.Lock()
+	defer connectionMutex.Unlock()
+	delete(connectionStates, conn)
+}
+
+// cleanupInactiveConnections removes connections that have been inactive for too long
+func cleanupInactiveConnections() {
+	ticker := time.NewTicker(5 * time.Minute) // Clean up every 5 minutes
+	defer ticker.Stop()
+
+	for range ticker.C {
+		connectionMutex.Lock()
+		now := time.Now()
+		var toRemove []net.Conn
+
+		for conn, state := range connectionStates {
+			// Remove connections inactive for more than 30 minutes
+			if now.Sub(state.LastActivity) > 30*time.Minute {
+				toRemove = append(toRemove, conn)
+			}
+		}
+
+		for _, conn := range toRemove {
+			delete(connectionStates, conn)
+		}
+
+		if len(toRemove) > 0 {
+			fmt.Printf("Cleaned up %d inactive connections. Active connections: %d\n",
+				len(toRemove), len(connectionStates))
+		}
+		connectionMutex.Unlock()
+	}
 }
 
 // parseParseMessage extracts the query from a Parse message
@@ -512,6 +556,9 @@ func main() {
 	a := api.MakeQueriesExecutedAPI(qs)
 	go a.RunApi()
 
+	// Start connection cleanup goroutine
+	go cleanupInactiveConnections()
+
 	// Start the monitored proxy (with query interception)
 	go startMonitoredProxy(listenAddr, backendAddr, qs)
 
@@ -532,6 +579,9 @@ func startMonitoredProxy(listenAddr, backendAddr string, qs *store.QueryStore) {
 	defer listener.Close()
 	fmt.Printf("Monitored proxy listening on %s, forwarding to %s\n", listenAddr, backendAddr)
 
+	// Limit concurrent connections to prevent resource exhaustion
+	semaphore := make(chan struct{}, 1000) // Max 1000 concurrent connections
+
 	// Handle incoming client connections
 	for {
 		clientConn, err := listener.Accept()
@@ -539,7 +589,25 @@ func startMonitoredProxy(listenAddr, backendAddr string, qs *store.QueryStore) {
 			log.Printf("Failed to accept connection: %v", err)
 			continue
 		}
-		go handleMonitoredClient(clientConn, backendAddr, qs)
+
+		// Check if we can accept more connections
+		select {
+		case semaphore <- struct{}{}:
+			// Connection accepted
+		default:
+			// Too many connections, reject
+			log.Printf("Rejecting connection: too many concurrent connections")
+			clientConn.Close()
+			continue
+		}
+
+		go func(conn net.Conn) {
+			defer func() {
+				conn.Close()
+				<-semaphore // Release connection slot
+			}()
+			handleMonitoredClient(conn, backendAddr, qs)
+		}(clientConn)
 	}
 }
 
@@ -565,7 +633,10 @@ func startPassthroughProxy(listenAddr, backendAddr string) {
 }
 
 func handleMonitoredClient(clientConn net.Conn, backendAddr string, qs *store.QueryStore) {
-	defer clientConn.Close()
+	defer func() {
+		clientConn.Close()
+		removeConnectionState(clientConn)
+	}()
 
 	// Connect to the backend (Postgres server)
 	backendConn, err := net.Dial("tcp", backendAddr)
