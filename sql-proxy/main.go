@@ -7,7 +7,6 @@ import (
 	"log"
 	"net"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -39,20 +38,37 @@ type ConnectionState struct {
 	PreparedStatements map[string]*PreparedStatement
 	LastParseMessage   *PreparedStatement
 	LastActivity       time.Time
+	mu                 sync.RWMutex // Per-connection mutex for better concurrency
 }
 
 var connectionStates = make(map[net.Conn]*ConnectionState)
 var connectionMutex sync.RWMutex
 
 func getConnectionState(conn net.Conn) *ConnectionState {
+	connectionMutex.RLock()
+	state, exists := connectionStates[conn]
+	connectionMutex.RUnlock()
+
+	if exists {
+		state.mu.Lock()
+		state.LastActivity = time.Now()
+		state.mu.Unlock()
+		return state
+	}
+
+	// Only acquire write lock when creating new state
 	connectionMutex.Lock()
 	defer connectionMutex.Unlock()
 
+	// Double-check after acquiring write lock
 	if state, exists := connectionStates[conn]; exists {
+		state.mu.Lock()
 		state.LastActivity = time.Now()
+		state.mu.Unlock()
 		return state
 	}
-	state := &ConnectionState{
+
+	state = &ConnectionState{
 		PreparedStatements: make(map[string]*PreparedStatement),
 		LastActivity:       time.Now(),
 	}
@@ -461,34 +477,6 @@ func cleanParameter(param interface{}) interface{} {
 	return cleaned
 }
 
-// cleanParameterForJSON converts special characters to JSON Unicode escape sequences
-func cleanParameterForJSON(param interface{}) interface{} {
-	if param == nil {
-		return nil
-	}
-
-	paramStr, ok := param.(string)
-	if !ok {
-		return param
-	}
-
-	// Convert to JSON-safe Unicode escape sequences
-	cleaned := strings.ReplaceAll(paramStr, "\u0000", "\\u0000") // Null byte
-	cleaned = strings.ReplaceAll(cleaned, "\n", "\\u000a")       // Newline
-	cleaned = strings.ReplaceAll(cleaned, "\t", "\\u0009")       // Tab
-	cleaned = strings.ReplaceAll(cleaned, "\r", "\\u000d")       // Carriage return
-
-	// Handle Unicode escape sequences in JSON context
-	cleaned = strings.ReplaceAll(cleaned, "\\u003e", ">")  // Greater than
-	cleaned = strings.ReplaceAll(cleaned, "\\u003c", "<")  // Less than
-	cleaned = strings.ReplaceAll(cleaned, "\\u003d", "=")  // Equals
-	cleaned = strings.ReplaceAll(cleaned, "\\u0026", "&")  // Ampersand
-	cleaned = strings.ReplaceAll(cleaned, "\\u0027", "'")  // Single quote
-	cleaned = strings.ReplaceAll(cleaned, "\\u0022", "\"") // Double quote
-
-	return cleaned
-}
-
 // formatParameterizedQuery combines a query with its parameters
 func formatParameterizedQuery(query string, params []interface{}) string {
 	if len(params) == 0 {
@@ -602,19 +590,8 @@ func startMonitoredProxy(listenAddr, backendAddr string, qs *store.QueryStore) {
 	}
 	defer listener.Close()
 
-	// Get connection limit from environment
-	connectionLimit := 1000 // default
-	if limitStr := os.Getenv("MAX_CONNECTIONS"); limitStr != "" {
-		if limit, err := strconv.Atoi(limitStr); err == nil && limit > 0 {
-			connectionLimit = limit
-		}
-	}
-
-	fmt.Printf("Monitored proxy listening on %s, forwarding to %s (max connections: %d)\n",
-		listenAddr, backendAddr, connectionLimit)
-
-	// Limit concurrent connections to prevent resource exhaustion
-	semaphore := make(chan struct{}, connectionLimit)
+	fmt.Printf("Monitored proxy listening on %s, forwarding to %s\n",
+		listenAddr, backendAddr)
 
 	// Handle incoming client connections
 	for {
@@ -624,22 +601,9 @@ func startMonitoredProxy(listenAddr, backendAddr string, qs *store.QueryStore) {
 			continue
 		}
 
-		// Check if we can accept more connections
-		select {
-		case semaphore <- struct{}{}:
-			// Connection accepted
-		default:
-			// Too many connections, reject
-			log.Printf("Rejecting connection from %s: too many concurrent connections (%d)",
-				clientConn.RemoteAddr(), connectionLimit)
-			clientConn.Close()
-			continue
-		}
-
 		go func(conn net.Conn) {
 			defer func() {
 				conn.Close()
-				<-semaphore // Release connection slot
 			}()
 			handleMonitoredClient(conn, backendAddr, qs)
 		}(clientConn)
@@ -654,7 +618,9 @@ func startPassthroughProxy(listenAddr, backendAddr string) {
 		return
 	}
 	defer listener.Close()
-	fmt.Printf("Passthrough proxy listening on %s, forwarding to %s\n", listenAddr, backendAddr)
+
+	fmt.Printf("Passthrough proxy listening on %s, forwarding to %s\n",
+		listenAddr, backendAddr)
 
 	// Handle incoming client connections
 	for {
@@ -663,7 +629,13 @@ func startPassthroughProxy(listenAddr, backendAddr string) {
 			log.Printf("Failed to accept connection: %v", err)
 			continue
 		}
-		go handlePassthroughClient(clientConn, backendAddr)
+
+		go func(conn net.Conn) {
+			defer func() {
+				conn.Close()
+			}()
+			handlePassthroughClient(conn, backendAddr)
+		}(clientConn)
 	}
 }
 
@@ -673,13 +645,13 @@ func handleMonitoredClient(clientConn net.Conn, backendAddr string, qs *store.Qu
 		removeConnectionState(clientConn)
 	}()
 
-	// Connect to the backend (Postgres server) with retry logic
+	// Connect to the backend (Postgres server) with faster timeout and less blocking
 	var backendConn net.Conn
 	var err error
 
-	// Try to connect with exponential backoff
-	for attempt := 1; attempt <= 3; attempt++ {
-		backendConn, err = net.DialTimeout("tcp", backendAddr, 5*time.Second)
+	// Use shorter timeout and fewer retries to reduce blocking
+	for attempt := 1; attempt <= 2; attempt++ {
+		backendConn, err = net.DialTimeout("tcp", backendAddr, 2*time.Second)
 		if err == nil {
 			break
 		}
@@ -687,9 +659,9 @@ func handleMonitoredClient(clientConn net.Conn, backendAddr string, qs *store.Qu
 		log.Printf("Connection attempt %d failed to backend %s: %v (client: %s)",
 			attempt, backendAddr, err, clientConn.RemoteAddr())
 
-		if attempt < 3 {
-			// Wait before retry with exponential backoff
-			backoff := time.Duration(attempt) * 100 * time.Millisecond
+		if attempt < 2 {
+			// Shorter backoff to reduce blocking
+			backoff := time.Duration(attempt) * 50 * time.Millisecond
 			time.Sleep(backoff)
 		}
 	}
@@ -713,8 +685,8 @@ func handleMonitoredClient(clientConn net.Conn, backendAddr string, qs *store.Qu
 func handlePassthroughClient(clientConn net.Conn, backendAddr string) {
 	defer clientConn.Close()
 
-	// Connect to the backend (Postgres server)
-	backendConn, err := net.Dial("tcp", backendAddr)
+	// Connect to the backend (Postgres server) with faster timeout
+	backendConn, err := net.DialTimeout("tcp", backendAddr, 2*time.Second)
 	if err != nil {
 		log.Printf("Failed to connect to backend: %v", err)
 		return
@@ -766,8 +738,11 @@ func listenAndProxyData(src net.Conn, dst net.Conn, qs *store.QueryStore) {
 							Name:  statementName,
 							Query: cleanedQuery,
 						}
-						getConnectionState(src).PreparedStatements[statementName] = stmt
-						getConnectionState(src).LastParseMessage = stmt // Store for use with empty statement names
+						connState := getConnectionState(src)
+						connState.mu.Lock()
+						connState.PreparedStatements[statementName] = stmt
+						connState.LastParseMessage = stmt // Store for use with empty statement names
+						connState.mu.Unlock()
 					}
 				}
 			case BindMessage:
@@ -780,12 +755,17 @@ func listenAndProxyData(src net.Conn, dst net.Conn, qs *store.QueryStore) {
 						var stmt *PreparedStatement
 						var exists bool
 
+						connState := getConnectionState(src)
 						// If statement name is empty, use the last Parse message
 						if statementName == "" {
-							stmt = getConnectionState(src).LastParseMessage
+							connState.mu.RLock()
+							stmt = connState.LastParseMessage
 							exists = stmt != nil
+							connState.mu.RUnlock()
 						} else {
-							stmt, exists = getConnectionState(src).PreparedStatements[statementName]
+							connState.mu.RLock()
+							stmt, exists = connState.PreparedStatements[statementName]
+							connState.mu.RUnlock()
 						}
 
 						if exists {
