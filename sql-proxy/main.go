@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -109,6 +110,20 @@ func cleanupInactiveConnections() {
 				len(toRemove), len(connectionStates))
 		}
 		connectionMutex.Unlock()
+	}
+}
+
+// logConnectionStats periodically logs connection statistics
+func logConnectionStats() {
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		connectionMutex.RLock()
+		activeConnections := len(connectionStates)
+		connectionMutex.RUnlock()
+
+		log.Printf("Connection stats: %d active connections", activeConnections)
 	}
 }
 
@@ -577,6 +592,9 @@ func main() {
 	// Start connection cleanup goroutine
 	go cleanupInactiveConnections()
 
+	// Start connection stats logging
+	go logConnectionStats()
+
 	// Start the monitored proxy (with query interception)
 	go startMonitoredProxy(listenAddr, backendAddr, qs)
 
@@ -595,10 +613,20 @@ func startMonitoredProxy(listenAddr, backendAddr string, qs *store.QueryStore) {
 		return
 	}
 	defer listener.Close()
-	fmt.Printf("Monitored proxy listening on %s, forwarding to %s\n", listenAddr, backendAddr)
+
+	// Get connection limit from environment
+	connectionLimit := 1000 // default
+	if limitStr := os.Getenv("MAX_CONNECTIONS"); limitStr != "" {
+		if limit, err := strconv.Atoi(limitStr); err == nil && limit > 0 {
+			connectionLimit = limit
+		}
+	}
+
+	fmt.Printf("Monitored proxy listening on %s, forwarding to %s (max connections: %d)\n",
+		listenAddr, backendAddr, connectionLimit)
 
 	// Limit concurrent connections to prevent resource exhaustion
-	semaphore := make(chan struct{}, 1000) // Max 1000 concurrent connections
+	semaphore := make(chan struct{}, connectionLimit)
 
 	// Handle incoming client connections
 	for {
@@ -614,7 +642,8 @@ func startMonitoredProxy(listenAddr, backendAddr string, qs *store.QueryStore) {
 			// Connection accepted
 		default:
 			// Too many connections, reject
-			log.Printf("Rejecting connection: too many concurrent connections")
+			log.Printf("Rejecting connection from %s: too many concurrent connections (%d)",
+				clientConn.RemoteAddr(), connectionLimit)
 			clientConn.Close()
 			continue
 		}
@@ -656,13 +685,36 @@ func handleMonitoredClient(clientConn net.Conn, backendAddr string, qs *store.Qu
 		removeConnectionState(clientConn)
 	}()
 
-	// Connect to the backend (Postgres server)
-	backendConn, err := net.Dial("tcp", backendAddr)
+	// Connect to the backend (Postgres server) with retry logic
+	var backendConn net.Conn
+	var err error
+
+	// Try to connect with exponential backoff
+	for attempt := 1; attempt <= 3; attempt++ {
+		backendConn, err = net.DialTimeout("tcp", backendAddr, 5*time.Second)
+		if err == nil {
+			break
+		}
+
+		log.Printf("Connection attempt %d failed to backend %s: %v (client: %s)",
+			attempt, backendAddr, err, clientConn.RemoteAddr())
+
+		if attempt < 3 {
+			// Wait before retry with exponential backoff
+			backoff := time.Duration(attempt) * 100 * time.Millisecond
+			time.Sleep(backoff)
+		}
+	}
+
 	if err != nil {
-		log.Printf("Failed to connect to backend: %v", err)
+		log.Printf("All connection attempts failed to backend %s: %v (client: %s)",
+			backendAddr, err, clientConn.RemoteAddr())
 		return
 	}
+
 	defer backendConn.Close()
+
+	log.Printf("Established connection: client %s -> backend %s", clientConn.RemoteAddr(), backendAddr)
 
 	// Proxy data from client to backend
 	go listenAndProxyData(clientConn, backendConn, qs)
