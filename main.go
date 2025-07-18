@@ -69,7 +69,7 @@ func main() {
 	if testSuiteName == "" {
 		testSuiteName = "default"
 	}
-	queriesBaseline := getArtifactFromMain("sql-queries", testSuiteName)
+	queriesBaseline := getArtifactFromMain(fmt.Sprintf("sql-queries-%s", testSuiteName))
 
 	// Generate JSON diff
 	queryDiff := diffQueries(string(body), queriesBaseline)
@@ -89,7 +89,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	schemaBaseline := getArtifactFromMain("full-schema", testSuiteName)
+	schemaBaseline := getArtifactFromMain(fmt.Sprintf("full-schema-%s", testSuiteName))
 
 	// Parse the baseline schema from JSON string
 	var baselineSchema []DatabaseSchema
@@ -168,7 +168,7 @@ func main() {
 }
 
 // Fetch and extract the sql-queries-main artifact content (JSON string)
-func getArtifactFromMain(name string, testSuiteName string) string {
+func getArtifactFromMain(name string) string {
 	repo := os.Getenv("GITHUB_REPOSITORY") // owner/repo
 	token := os.Getenv("GITHUB_TOKEN")     // GitHub token
 
@@ -199,7 +199,7 @@ func getArtifactFromMain(name string, testSuiteName string) string {
 	apiURL = fmt.Sprintf("%s?per_page=100&name=%s", apiURL, name)
 	req, _ = http.NewRequest("GET", apiURL, nil)
 	req.Header.Set("Authorization", "token "+token)
-
+	fmt.Println("API URL:", apiURL)
 	resp, err := client.Do(req)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: Failed to list artifacts: %v\n", err)
@@ -226,19 +226,17 @@ func getArtifactFromMain(name string, testSuiteName string) string {
 		if a.WorkflowRun.HeadBranch == "main" {
 			// Check if name matches what we're looking for (base name + service name)
 			baseNameMatch := strings.Contains(strings.ToLower(a.Name), strings.ToLower(name))
-			serviceNameMatch := strings.Contains(strings.ToLower(a.Name), strings.ToLower(testSuiteName))
-			fmt.Fprintf(os.Stderr, "Debug: Artifact '%s' - baseNameMatch: %t, serviceNameMatch: %t\n", a.Name, baseNameMatch, serviceNameMatch)
-			if baseNameMatch && serviceNameMatch {
+			fmt.Fprintf(os.Stderr, "Debug: Artifact '%s' - baseNameMatch: %t\n", a.Name, baseNameMatch)
+			if baseNameMatch {
 				candidates = append(candidates, a)
 			}
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "Debug: Found %d candidate artifacts for name='%s', testSuiteName='%s'\n", len(candidates), name, testSuiteName)
+	fmt.Fprintf(os.Stderr, "Debug: Found %d candidate artifacts for name='%s'\n", len(candidates), name)
 
 	if len(candidates) == 0 {
-		fmt.Fprintf(os.Stderr, "Error: No baseline artifact found for name='%s' with testSuiteName='%s'\n", name, testSuiteName)
-		fmt.Fprintf(os.Stderr, "Expected artifact name pattern: '%s-%s'\n", name, testSuiteName)
+		fmt.Fprintf(os.Stderr, "Error: No baseline artifact found for name='%s'\n", name)
 		return ""
 	}
 
