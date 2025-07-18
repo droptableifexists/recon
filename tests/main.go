@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -88,6 +89,9 @@ func main() {
 
 	// Test for connection leaks
 	testConnectionLeaks()
+
+	// Test specifically for EOF and connection closure issues
+	testEOFAndConnectionIssues()
 
 	resp, err := http.Get("http://localhost:8080/queries")
 	if err != nil {
@@ -582,6 +586,8 @@ func testConnectionLimiting() {
 	// Check if we have a reasonable number of successful connections
 	if successfulConnections < 1000 {
 		fmt.Printf("\n❌ ERROR: Too few successful connections (%d). The proxy might be too restrictive.\n", successfulConnections)
+		fmt.Printf("FAILING CI: Proxy is not handling connections properly\n")
+		os.Exit(1) // Fail the CI
 	} else {
 		fmt.Printf("\n✅ SUCCESS: Proxy handled %d connections successfully.\n", successfulConnections)
 	}
@@ -697,11 +703,15 @@ func testAggressiveConnectionLimiting() {
 	} else {
 		fmt.Printf("\n❌ PROBLEM: Even with %d aggressive connections, no connection refused errors occurred.\n", numConnections)
 		fmt.Printf("   This suggests the proxy is NOT limiting connections and may be overwhelming the database.\n")
+		fmt.Printf("FAILING CI: No connection limiting detected\n")
+		os.Exit(1) // Fail the CI
 	}
 
 	// Check if we have a reasonable number of successful connections
 	if successfulConnections < 5000 {
 		fmt.Printf("\n❌ ERROR: Too few successful connections (%d). The proxy might be too restrictive.\n", successfulConnections)
+		fmt.Printf("FAILING CI: Proxy is too restrictive\n")
+		os.Exit(1) // Fail the CI
 	} else {
 		fmt.Printf("\n✅ SUCCESS: Proxy handled %d aggressive connections successfully.\n", successfulConnections)
 	}
@@ -832,6 +842,8 @@ func testConnectionLeaks() {
 			allConnectionRefusedCount, iterations)
 		fmt.Printf("   This suggests the proxy is not properly closing connections to the database.\n")
 		fmt.Printf("   Each iteration should have similar success rates if connections are properly managed.\n")
+		fmt.Printf("FAILING CI: Connection leaks detected\n")
+		os.Exit(1) // Fail the CI
 	} else {
 		fmt.Printf("\n✅ NO CONNECTION LEAKS DETECTED: All %d connections were handled successfully\n",
 			allSuccessfulConnections)
@@ -846,6 +858,201 @@ func testConnectionLeaks() {
 		fmt.Printf("✅ Consistent performance across iterations - good connection management\n")
 	} else {
 		fmt.Printf("⚠️  Inconsistent performance - possible connection management issues\n")
+		fmt.Printf("FAILING CI: Inconsistent connection performance\n")
+		os.Exit(1) // Fail the CI
+	}
+}
+
+func testEOFAndConnectionIssues() {
+	fmt.Println("\n=== Testing for EOF and Connection Closure Issues ===")
+
+	// Connection parameters
+	connStr := "postgres://postgres:postgres@localhost:5433/postgres?sslmode=disable"
+
+	// Test configuration - create connections and check for EOF errors
+	numConnections := 1000
+	concurrency := 50
+	iterations := 5
+
+	fmt.Printf("Testing for EOF and connection closure issues: %d connections x %d iterations with %d concurrent workers\n",
+		numConnections, iterations, concurrency)
+
+	// Track connection behavior over multiple iterations
+	var allSuccessfulConnections int
+	var allFailedConnections int
+	var allConnectionRefusedCount int
+	var allEOFCount int
+	var errorTypes = make(map[string]int)
+
+	for iter := 0; iter < iterations; iter++ {
+		fmt.Printf("\n--- Iteration %d/%d ---\n", iter+1, iterations)
+
+		// Create a worker pool
+		var wg sync.WaitGroup
+		semaphore := make(chan struct{}, concurrency)
+
+		startTime := time.Now()
+		successfulConnections := 0
+		failedConnections := 0
+		connectionRefusedCount := 0
+		eofCount := 0
+		var mu sync.Mutex
+
+		for i := 0; i < numConnections; i++ {
+			wg.Add(1)
+			semaphore <- struct{}{} // Acquire semaphore
+
+			go func(connID int) {
+				defer wg.Done()
+				defer func() { <-semaphore }() // Release semaphore
+
+				// Create connection
+				db, err := sql.Open("postgres", connStr)
+				if err != nil {
+					mu.Lock()
+					failedConnections++
+					if isConnectionRefused(err) {
+						connectionRefusedCount++
+					}
+					// Track specific error types
+					errStr := err.Error()
+					errorTypes[errStr]++
+					if contains(errStr, "EOF") {
+						eofCount++
+					}
+					mu.Unlock()
+					if connID%100 == 0 {
+						log.Printf("Connection %d: Failed to open: %v", connID, err)
+					}
+					return
+				}
+				defer db.Close() // This should close the connection
+
+				// Test connection with timeout
+				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+				defer cancel()
+
+				if err := db.PingContext(ctx); err != nil {
+					mu.Lock()
+					failedConnections++
+					if isConnectionRefused(err) {
+						connectionRefusedCount++
+					}
+					// Track specific error types
+					errStr := err.Error()
+					errorTypes[errStr]++
+					if contains(errStr, "EOF") {
+						eofCount++
+					}
+					mu.Unlock()
+					if connID%100 == 0 {
+						log.Printf("Connection %d: Failed to ping: %v", connID, err)
+					}
+					return
+				}
+
+				// Execute a simple query
+				_, err = db.QueryContext(ctx, "SELECT 1")
+				if err != nil {
+					mu.Lock()
+					failedConnections++
+					if isConnectionRefused(err) {
+						connectionRefusedCount++
+					}
+					// Track specific error types
+					errStr := err.Error()
+					errorTypes[errStr]++
+					if contains(errStr, "EOF") {
+						eofCount++
+					}
+					mu.Unlock()
+					if connID%100 == 0 {
+						log.Printf("Connection %d: Failed to query: %v", connID, err)
+					}
+					return
+				}
+
+				mu.Lock()
+				successfulConnections++
+				mu.Unlock()
+
+				// Keep connection alive briefly
+				time.Sleep(10 * time.Millisecond)
+			}(i)
+		}
+
+		// Wait for all workers to complete
+		wg.Wait()
+
+		duration := time.Since(startTime)
+
+		fmt.Printf("Iteration %d Results:\n", iter+1)
+		fmt.Printf("  Successful: %d, Failed: %d, Refused: %d, EOF: %d\n",
+			successfulConnections, failedConnections, connectionRefusedCount, eofCount)
+		fmt.Printf("  Duration: %v, Rate: %.2f conn/s\n",
+			duration, float64(successfulConnections)/duration.Seconds())
+
+		// Track totals
+		allSuccessfulConnections += successfulConnections
+		allFailedConnections += failedConnections
+		allConnectionRefusedCount += connectionRefusedCount
+		allEOFCount += eofCount
+
+		// Check for increasing failure rates (indicates connection leaks)
+		if iter > 0 && (connectionRefusedCount > 0 || eofCount > 0) {
+			fmt.Printf("  ⚠️  Connection errors detected - possible connection leak or EOF issues\n")
+		}
+
+		// Wait a bit between iterations to see if connections are properly cleaned up
+		time.Sleep(2 * time.Second)
+	}
+
+	fmt.Printf("\n=== EOF and Connection Closure Test Summary ===\n")
+	fmt.Printf("Total iterations: %d\n", iterations)
+	fmt.Printf("Total successful connections: %d\n", allSuccessfulConnections)
+	fmt.Printf("Total failed connections: %d\n", allFailedConnections)
+	fmt.Printf("Total connection refused errors: %d\n", allConnectionRefusedCount)
+	fmt.Printf("Total EOF errors: %d\n", allEOFCount)
+
+	// Show most common error types
+	if len(errorTypes) > 0 {
+		fmt.Printf("\nMost common error types:\n")
+		for errStr, count := range errorTypes {
+			if count > 10 { // Only show errors that occurred more than 10 times
+				fmt.Printf("  %s: %d occurrences\n", errStr, count)
+			}
+		}
+	}
+
+	// Analyze for EOF and connection closure issues
+	if allEOFCount > 0 {
+		fmt.Printf("\n❌ EOF ERRORS DETECTED: %d EOF errors across %d iterations\n",
+			allEOFCount, iterations)
+		fmt.Printf("   This suggests the proxy is closing connections unexpectedly or not handling them properly.\n")
+		fmt.Printf("FAILING CI: EOF errors detected\n")
+		os.Exit(1) // Fail the CI
+	} else if allConnectionRefusedCount > 0 {
+		fmt.Printf("\n❌ CONNECTION LEAK DETECTED: %d connection refused errors across %d iterations\n",
+			allConnectionRefusedCount, iterations)
+		fmt.Printf("   This suggests the proxy is not properly closing connections to the database.\n")
+		fmt.Printf("FAILING CI: Connection leaks detected\n")
+		os.Exit(1) // Fail the CI
+	} else {
+		fmt.Printf("\n✅ NO CONNECTION ISSUES DETECTED: All %d connections were handled successfully\n",
+			allSuccessfulConnections)
+		fmt.Printf("   The proxy appears to be properly managing connections.\n")
+	}
+
+	// Check for consistent performance (indicates good connection management)
+	avgSuccessPerIteration := allSuccessfulConnections / iterations
+	fmt.Printf("\nAverage successful connections per iteration: %d\n", avgSuccessPerIteration)
+
+	if avgSuccessPerIteration > 950 { // 95% success rate
+		fmt.Printf("✅ Consistent performance across iterations - good connection management\n")
+	} else {
+		fmt.Printf("⚠️  Inconsistent performance - possible connection management issues\n")
+		fmt.Printf("FAILING CI: Inconsistent connection performance\n")
+		os.Exit(1) // Fail the CI
 	}
 }
 
@@ -860,7 +1067,13 @@ func isConnectionRefused(err error) bool {
 		contains(errStr, "connection reset") ||
 		contains(errStr, "no such host") ||
 		contains(errStr, "timeout") ||
-		contains(errStr, "too many open files")
+		contains(errStr, "too many open files") ||
+		contains(errStr, "EOF") || // End of File - connection closed unexpectedly
+		contains(errStr, "broken pipe") || // Connection broken
+		contains(errStr, "connection reset by peer") || // Remote end closed connection
+		contains(errStr, "use of closed network connection") || // Connection was closed
+		contains(errStr, "driver: bad connection") || // Bad connection state
+		contains(errStr, "invalid connection") // Invalid connection
 }
 
 // contains is a simple string contains function
