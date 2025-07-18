@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"fmt"
 	"log"
@@ -672,14 +673,34 @@ func handleMonitoredClient(clientConn net.Conn, backendAddr string, qs *store.Qu
 		return
 	}
 
-	defer backendConn.Close()
+	// Create a context for coordinating both proxy goroutines
+	ctx, cancel := context.WithCancel(context.Background())
+	defer func() {
+		cancel()            // Cancel context to signal both goroutines to stop
+		backendConn.Close() // Ensure backend connection is closed
+	}()
 
 	log.Printf("Established connection: client %s -> backend %s", clientConn.RemoteAddr(), backendAddr)
 
+	// Use WaitGroup to wait for both proxy goroutines to complete
+	var wg sync.WaitGroup
+	wg.Add(2)
+
 	// Proxy data from client to backend
-	go listenAndProxyData(clientConn, backendConn, qs)
+	go func() {
+		defer wg.Done()
+		listenAndProxyDataWithContext(ctx, clientConn, backendConn, qs)
+	}()
+
 	// Proxy data from backend to client
-	listenAndProxyData(backendConn, clientConn, qs)
+	go func() {
+		defer wg.Done()
+		listenAndProxyDataWithContext(ctx, backendConn, clientConn, qs)
+	}()
+
+	// Wait for both goroutines to complete (when either connection closes)
+	wg.Wait()
+	log.Printf("Connection closed: client %s -> backend %s", clientConn.RemoteAddr(), backendAddr)
 }
 
 func handlePassthroughClient(clientConn net.Conn, backendAddr string) {
@@ -691,21 +712,67 @@ func handlePassthroughClient(clientConn net.Conn, backendAddr string) {
 		log.Printf("Failed to connect to backend: %v", err)
 		return
 	}
-	defer backendConn.Close()
+
+	// Create a context for coordinating both proxy goroutines
+	ctx, cancel := context.WithCancel(context.Background())
+	defer func() {
+		cancel()            // Cancel context to signal both goroutines to stop
+		backendConn.Close() // Ensure backend connection is closed
+	}()
+
+	// Use WaitGroup to wait for both proxy goroutines to complete
+	var wg sync.WaitGroup
+	wg.Add(2)
 
 	// Proxy data from client to backend (no processing)
-	go dontListenAndProxyData(clientConn, backendConn)
+	go func() {
+		defer wg.Done()
+		dontListenAndProxyDataWithContext(ctx, clientConn, backendConn)
+	}()
+
 	// Proxy data from backend to client (no processing)
-	dontListenAndProxyData(backendConn, clientConn)
+	go func() {
+		defer wg.Done()
+		dontListenAndProxyDataWithContext(ctx, backendConn, clientConn)
+	}()
+
+	// Wait for both goroutines to complete (when either connection closes)
+	wg.Wait()
 }
 
-// listenAndProxyData forwards data between two connections
-func listenAndProxyData(src net.Conn, dst net.Conn, qs *store.QueryStore) {
+// listenAndProxyDataWithContext forwards data between two connections with context cancellation
+func listenAndProxyDataWithContext(ctx context.Context, src net.Conn, dst net.Conn, qs *store.QueryStore) {
 	buffer := make([]byte, 4096)
+
+	// Set read deadline to make the connection cancellable
+	src.SetReadDeadline(time.Now().Add(1 * time.Second))
+
 	for {
-		// Read data from source
+		select {
+		case <-ctx.Done():
+			// Context was cancelled, exit gracefully
+			return
+		default:
+			// Continue with normal operation
+		}
+
+		// Read data from source with timeout
+		src.SetReadDeadline(time.Now().Add(1 * time.Second))
 		n, err := src.Read(buffer)
 		if err != nil {
+			// Check if it's a timeout error (which is expected for context cancellation)
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				// Check if context was cancelled during the timeout
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					// Continue reading
+					continue
+				}
+			}
+
+			// Real error - log and exit
 			log.Printf("Error reading from source: %v", err)
 			return
 		}
@@ -791,15 +858,43 @@ func listenAndProxyData(src net.Conn, dst net.Conn, qs *store.QueryStore) {
 	}
 }
 
-func dontListenAndProxyData(src net.Conn, dst net.Conn) {
+// dontListenAndProxyDataWithContext forwards data between two connections with context cancellation (no processing)
+func dontListenAndProxyDataWithContext(ctx context.Context, src net.Conn, dst net.Conn) {
 	buffer := make([]byte, 4096)
+
+	// Set read deadline to make the connection cancellable
+	src.SetReadDeadline(time.Now().Add(1 * time.Second))
+
 	for {
-		// Read data from source
+		select {
+		case <-ctx.Done():
+			// Context was cancelled, exit gracefully
+			return
+		default:
+			// Continue with normal operation
+		}
+
+		// Read data from source with timeout
+		src.SetReadDeadline(time.Now().Add(1 * time.Second))
 		n, err := src.Read(buffer)
 		if err != nil {
+			// Check if it's a timeout error (which is expected for context cancellation)
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				// Check if context was cancelled during the timeout
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					// Continue reading
+					continue
+				}
+			}
+
+			// Real error - log and exit
 			log.Printf("Error reading from source: %v", err)
 			return
 		}
+
 		// Write data to destination
 		_, err = dst.Write(buffer[:n])
 		if err != nil {
