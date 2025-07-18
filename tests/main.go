@@ -263,7 +263,7 @@ func test_any_array_queries(pool *pgxpool.Pool) {
 	for rows2.Next() {
 		var number int
 		var isInArray bool
-		err := rows.Scan(&number, &isInArray)
+		err := rows2.Scan(&number, &isInArray)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -282,7 +282,7 @@ func test_any_array_queries(pool *pgxpool.Pool) {
 	for rows3.Next() {
 		var fruit string
 		var isFruit bool
-		err := rows.Scan(&fruit, &isFruit)
+		err := rows3.Scan(&fruit, &isFruit)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -301,7 +301,7 @@ func test_any_array_queries(pool *pgxpool.Pool) {
 	for rows4.Next() {
 		var value string
 		var isInEmptyArray bool
-		err := rows.Scan(&value, &isInEmptyArray)
+		err := rows4.Scan(&value, &isInEmptyArray)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -409,7 +409,7 @@ func test_multiline_sql_queries(pool *pgxpool.Pool) {
 		var mainValue string
 		var calculatedValue int
 		var processedText string
-		err := rows.Scan(&mainValue, &calculatedValue, &processedText)
+		err := rows3.Scan(&mainValue, &calculatedValue, &processedText)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -439,7 +439,7 @@ func test_multiline_sql_queries(pool *pgxpool.Pool) {
 		var name string
 		var score float64
 		var rank int
-		err := rows.Scan(&rowNum, &name, &score, &rank)
+		err := rows4.Scan(&rowNum, &name, &score, &rank)
 		if err != nil {
 			log.Fatal(err)
 		}
