@@ -83,6 +83,9 @@ func main() {
 	// Test connection limiting
 	testConnectionLimiting()
 
+	// Test even more aggressive connection creation
+	testAggressiveConnectionLimiting()
+
 	resp, err := http.Get("http://localhost:8080/queries")
 	if err != nil {
 		fmt.Println("Error calling /queries:", err)
@@ -467,9 +470,9 @@ func testConnectionLimiting() {
 	// Connection parameters
 	connStr := "postgres://postgres:postgres@localhost:5433/postgres?sslmode=disable"
 
-	// Test configuration - try to create more connections than the proxy can handle
-	numConnections := 1000
-	concurrency := 100
+	// Test configuration - try to create MANY more connections to trigger limits
+	numConnections := 10000 // Increased from 1000 to 10000
+	concurrency := 500      // Increased from 100 to 500
 
 	fmt.Printf("Attempting to create %d connections with %d concurrent workers\n",
 		numConnections, concurrency)
@@ -501,7 +504,9 @@ func testConnectionLimiting() {
 					connectionRefusedCount++
 				}
 				mu.Unlock()
-				log.Printf("Connection %d: Failed to open connection: %v", connID, err)
+				if connID%1000 == 0 {
+					log.Printf("Connection %d: Failed to open connection: %v", connID, err)
+				}
 				return
 			}
 			defer db.Close()
@@ -517,7 +522,9 @@ func testConnectionLimiting() {
 					connectionRefusedCount++
 				}
 				mu.Unlock()
-				log.Printf("Connection %d: Failed to ping: %v", connID, err)
+				if connID%1000 == 0 {
+					log.Printf("Connection %d: Failed to ping: %v", connID, err)
+				}
 				return
 			}
 
@@ -530,7 +537,9 @@ func testConnectionLimiting() {
 					connectionRefusedCount++
 				}
 				mu.Unlock()
-				log.Printf("Connection %d: Failed to query: %v", connID, err)
+				if connID%1000 == 0 {
+					log.Printf("Connection %d: Failed to query: %v", connID, err)
+				}
 				return
 			}
 
@@ -539,9 +548,9 @@ func testConnectionLimiting() {
 			mu.Unlock()
 
 			// Keep connection alive for a bit to simulate real usage
-			time.Sleep(50 * time.Millisecond)
+			time.Sleep(20 * time.Millisecond) // Reduced from 50ms to 20ms
 
-			if connID%100 == 0 {
+			if connID%1000 == 0 {
 				fmt.Printf("Connection %d: Success\n", connID)
 			}
 		}(i)
@@ -568,10 +577,130 @@ func testConnectionLimiting() {
 	}
 
 	// Check if we have a reasonable number of successful connections
-	if successfulConnections < 100 {
+	if successfulConnections < 1000 {
 		fmt.Printf("\n❌ ERROR: Too few successful connections (%d). The proxy might be too restrictive.\n", successfulConnections)
 	} else {
 		fmt.Printf("\n✅ SUCCESS: Proxy handled %d connections successfully.\n", successfulConnections)
+	}
+}
+
+func testAggressiveConnectionLimiting() {
+	fmt.Println("\n=== Testing Aggressive Connection Limiting ===")
+
+	// Connection parameters
+	connStr := "postgres://postgres:postgres@localhost:5433/postgres?sslmode=disable"
+
+	// Even more aggressive test - create connections as fast as possible
+	numConnections := 50000 // 50k connections
+	concurrency := 1000     // 1k concurrent workers
+
+	fmt.Printf("AGGRESSIVE TEST: Attempting to create %d connections with %d concurrent workers\n",
+		numConnections, concurrency)
+
+	// Create a worker pool
+	var wg sync.WaitGroup
+	semaphore := make(chan struct{}, concurrency)
+
+	startTime := time.Now()
+	successfulConnections := 0
+	failedConnections := 0
+	connectionRefusedCount := 0
+	var mu sync.Mutex
+
+	for i := 0; i < numConnections; i++ {
+		wg.Add(1)
+		semaphore <- struct{}{} // Acquire semaphore
+
+		go func(connID int) {
+			defer wg.Done()
+			defer func() { <-semaphore }() // Release semaphore
+
+			// Create connection
+			db, err := sql.Open("postgres", connStr)
+			if err != nil {
+				mu.Lock()
+				failedConnections++
+				if isConnectionRefused(err) {
+					connectionRefusedCount++
+				}
+				mu.Unlock()
+				if connID%5000 == 0 {
+					log.Printf("AGGRESSIVE Connection %d: Failed to open: %v", connID, err)
+				}
+				return
+			}
+			defer db.Close()
+
+			// Test connection with shorter timeout
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+
+			if err := db.PingContext(ctx); err != nil {
+				mu.Lock()
+				failedConnections++
+				if isConnectionRefused(err) {
+					connectionRefusedCount++
+				}
+				mu.Unlock()
+				if connID%5000 == 0 {
+					log.Printf("AGGRESSIVE Connection %d: Failed to ping: %v", connID, err)
+				}
+				return
+			}
+
+			// Execute a simple query
+			_, err = db.QueryContext(ctx, "SELECT 1")
+			if err != nil {
+				mu.Lock()
+				failedConnections++
+				if isConnectionRefused(err) {
+					connectionRefusedCount++
+				}
+				mu.Unlock()
+				if connID%5000 == 0 {
+					log.Printf("AGGRESSIVE Connection %d: Failed to query: %v", connID, err)
+				}
+				return
+			}
+
+			mu.Lock()
+			successfulConnections++
+			mu.Unlock()
+
+			// Minimal delay to keep connection alive
+			time.Sleep(5 * time.Millisecond)
+
+			if connID%5000 == 0 {
+				fmt.Printf("AGGRESSIVE Connection %d: Success\n", connID)
+			}
+		}(i)
+	}
+
+	// Wait for all workers to complete
+	wg.Wait()
+
+	duration := time.Since(startTime)
+
+	fmt.Printf("\n=== Aggressive Connection Limit Test Results ===\n")
+	fmt.Printf("Total connections attempted: %d\n", numConnections)
+	fmt.Printf("Successful connections: %d\n", successfulConnections)
+	fmt.Printf("Failed connections: %d\n", failedConnections)
+	fmt.Printf("Connection refused errors: %d\n", connectionRefusedCount)
+	fmt.Printf("Duration: %v\n", duration)
+	fmt.Printf("Connections per second: %.2f\n", float64(successfulConnections)/duration.Seconds())
+
+	if connectionRefusedCount > 0 {
+		fmt.Printf("\n✅ SUCCESS: Aggressive test shows connection limiting is working! %d connections were refused.\n", connectionRefusedCount)
+	} else {
+		fmt.Printf("\n❌ PROBLEM: Even with %d aggressive connections, no connection refused errors occurred.\n", numConnections)
+		fmt.Printf("   This suggests the proxy is NOT limiting connections and may be overwhelming the database.\n")
+	}
+
+	// Check if we have a reasonable number of successful connections
+	if successfulConnections < 5000 {
+		fmt.Printf("\n❌ ERROR: Too few successful connections (%d). The proxy might be too restrictive.\n", successfulConnections)
+	} else {
+		fmt.Printf("\n✅ SUCCESS: Proxy handled %d aggressive connections successfully.\n", successfulConnections)
 	}
 }
 
