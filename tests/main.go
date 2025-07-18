@@ -2,13 +2,17 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/jackc/pgx/v4/pgxpool"
+	_ "github.com/lib/pq"
 )
 
 func main() {
@@ -75,6 +79,9 @@ func main() {
 	test_parameterized_transaction(pool)
 	test_any_array_queries(pool)
 	test_multiline_sql_queries(pool)
+
+	// Test connection limiting
+	testConnectionLimiting()
 
 	resp, err := http.Get("http://localhost:8080/queries")
 	if err != nil {
@@ -452,4 +459,149 @@ func test_multiline_sql_queries(pool *pgxpool.Pool) {
 	}
 
 	fmt.Println("Multiline SQL queries test completed successfully")
+}
+
+func testConnectionLimiting() {
+	fmt.Println("=== Testing Connection Limiting ===")
+
+	// Connection parameters
+	connStr := "postgres://postgres:postgres@localhost:5433/postgres?sslmode=disable"
+
+	// Test configuration - try to create more connections than the proxy can handle
+	numConnections := 1000
+	concurrency := 100
+
+	fmt.Printf("Attempting to create %d connections with %d concurrent workers\n",
+		numConnections, concurrency)
+
+	// Create a worker pool
+	var wg sync.WaitGroup
+	semaphore := make(chan struct{}, concurrency)
+
+	startTime := time.Now()
+	successfulConnections := 0
+	failedConnections := 0
+	connectionRefusedCount := 0
+	var mu sync.Mutex
+
+	for i := 0; i < numConnections; i++ {
+		wg.Add(1)
+		semaphore <- struct{}{} // Acquire semaphore
+
+		go func(connID int) {
+			defer wg.Done()
+			defer func() { <-semaphore }() // Release semaphore
+
+			// Create connection
+			db, err := sql.Open("postgres", connStr)
+			if err != nil {
+				mu.Lock()
+				failedConnections++
+				if isConnectionRefused(err) {
+					connectionRefusedCount++
+				}
+				mu.Unlock()
+				log.Printf("Connection %d: Failed to open connection: %v", connID, err)
+				return
+			}
+			defer db.Close()
+
+			// Test connection with timeout
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			if err := db.PingContext(ctx); err != nil {
+				mu.Lock()
+				failedConnections++
+				if isConnectionRefused(err) {
+					connectionRefusedCount++
+				}
+				mu.Unlock()
+				log.Printf("Connection %d: Failed to ping: %v", connID, err)
+				return
+			}
+
+			// Execute a simple query
+			_, err = db.QueryContext(ctx, "SELECT 1")
+			if err != nil {
+				mu.Lock()
+				failedConnections++
+				if isConnectionRefused(err) {
+					connectionRefusedCount++
+				}
+				mu.Unlock()
+				log.Printf("Connection %d: Failed to query: %v", connID, err)
+				return
+			}
+
+			mu.Lock()
+			successfulConnections++
+			mu.Unlock()
+
+			// Keep connection alive for a bit to simulate real usage
+			time.Sleep(50 * time.Millisecond)
+
+			if connID%100 == 0 {
+				fmt.Printf("Connection %d: Success\n", connID)
+			}
+		}(i)
+	}
+
+	// Wait for all workers to complete
+	wg.Wait()
+
+	duration := time.Since(startTime)
+
+	fmt.Printf("\n=== Connection Limit Test Results ===\n")
+	fmt.Printf("Total connections attempted: %d\n", numConnections)
+	fmt.Printf("Successful connections: %d\n", successfulConnections)
+	fmt.Printf("Failed connections: %d\n", failedConnections)
+	fmt.Printf("Connection refused errors: %d\n", connectionRefusedCount)
+	fmt.Printf("Duration: %v\n", duration)
+	fmt.Printf("Connections per second: %.2f\n", float64(successfulConnections)/duration.Seconds())
+
+	if connectionRefusedCount > 0 {
+		fmt.Printf("\n✅ SUCCESS: Connection limiting is working! %d connections were refused as expected.\n", connectionRefusedCount)
+	} else {
+		fmt.Printf("\n⚠️  WARNING: No connections were refused. The proxy might not be limiting connections properly.\n")
+		fmt.Printf("   Consider checking if the proxy has connection limits configured.\n")
+	}
+
+	// Check if we have a reasonable number of successful connections
+	if successfulConnections < 100 {
+		fmt.Printf("\n❌ ERROR: Too few successful connections (%d). The proxy might be too restrictive.\n", successfulConnections)
+	} else {
+		fmt.Printf("\n✅ SUCCESS: Proxy handled %d connections successfully.\n", successfulConnections)
+	}
+}
+
+// isConnectionRefused checks if the error is a connection refused error
+func isConnectionRefused(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errStr := err.Error()
+	return contains(errStr, "connection refused") ||
+		contains(errStr, "connection reset") ||
+		contains(errStr, "no such host") ||
+		contains(errStr, "timeout") ||
+		contains(errStr, "too many open files")
+}
+
+// contains is a simple string contains function
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr ||
+		(len(s) > len(substr) && (s[:len(substr)] == substr ||
+			s[len(s)-len(substr):] == substr ||
+			containsSubstring(s, substr))))
+}
+
+func containsSubstring(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }
