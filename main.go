@@ -81,8 +81,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Print(string(queryDiffJSON))
-
 	// Generate schema SQL
 	databaseSchema := GetDatabaseSchema(os.Getenv("DB_CONNECTION_STRING"))
 	schemaJSON, err := json.Marshal(databaseSchema)
@@ -229,14 +227,18 @@ func getArtifactFromMain(name string, testSuiteName string) string {
 			// Check if name matches what we're looking for (base name + service name)
 			baseNameMatch := strings.Contains(strings.ToLower(a.Name), strings.ToLower(name))
 			serviceNameMatch := strings.Contains(strings.ToLower(a.Name), strings.ToLower(testSuiteName))
+			fmt.Fprintf(os.Stderr, "Debug: Artifact '%s' - baseNameMatch: %t, serviceNameMatch: %t\n", a.Name, baseNameMatch, serviceNameMatch)
 			if baseNameMatch && serviceNameMatch {
 				candidates = append(candidates, a)
 			}
 		}
 	}
 
+	fmt.Fprintf(os.Stderr, "Debug: Found %d candidate artifacts for name='%s', testSuiteName='%s'\n", len(candidates), name, testSuiteName)
+
 	if len(candidates) == 0 {
-		fmt.Fprintf(os.Stderr, "Warning: No suitable baseline artifact from main branch found\n")
+		fmt.Fprintf(os.Stderr, "Error: No baseline artifact found for name='%s' with testSuiteName='%s'\n", name, testSuiteName)
+		fmt.Fprintf(os.Stderr, "Expected artifact name pattern: '%s-%s'\n", name, testSuiteName)
 		return ""
 	}
 
@@ -313,11 +315,17 @@ func diffQueries(current, baseline string) []Query {
 	json.Unmarshal([]byte(current), &currentQueries)
 	json.Unmarshal([]byte(baseline), &baselineQueries)
 
+	fmt.Fprintf(os.Stderr, "Debug: Current queries count: %d\n", len(currentQueries))
+	fmt.Fprintf(os.Stderr, "Debug: Baseline queries count: %d\n", len(baselineQueries))
+	fmt.Fprintf(os.Stderr, "Debug: Baseline string length: %d\n", len(baseline))
+
 	// Create a map of baseline queries for quick lookup
 	baselineMap := make(map[string]bool)
 	for _, q := range baselineQueries {
 		baselineMap[q.Query] = true
 	}
+
+	fmt.Fprintf(os.Stderr, "Debug: Baseline map size: %d\n", len(baselineMap))
 
 	// Find new queries
 	var newQueries []Query
@@ -327,5 +335,6 @@ func diffQueries(current, baseline string) []Query {
 		}
 	}
 
+	fmt.Fprintf(os.Stderr, "Debug: New queries count: %d\n", len(newQueries))
 	return newQueries
 }
