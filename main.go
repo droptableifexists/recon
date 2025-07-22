@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -197,7 +196,7 @@ func getArtifactFromMain(name string) string {
 	}
 
 	// Add name parameter and increase per_page to 100
-	apiURL = fmt.Sprintf("%s?per_page=100&name=%s", apiURL, url.QueryEscape(name))
+	apiURL = fmt.Sprintf("%s?per_page=1000")
 	req, _ = http.NewRequest("GET", apiURL, nil)
 	req.Header.Set("Authorization", "token "+token)
 	fmt.Println("API URL:", apiURL)
