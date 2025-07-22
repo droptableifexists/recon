@@ -221,6 +221,12 @@ func getArtifactFromMain(name string) string {
 		return ""
 	}
 
+	fmt.Fprintf(os.Stderr, "Debug: Total artifacts found: %d\n", artifactsResp.TotalCount)
+	fmt.Fprintf(os.Stderr, "Debug: All artifacts:\n")
+	for _, a := range artifactsResp.Artifacts {
+		fmt.Fprintf(os.Stderr, "  - '%s' (branch: %s)\n", a.Name, a.WorkflowRun.HeadBranch)
+	}
+
 	var candidates []Artifact
 	for _, a := range artifactsResp.Artifacts {
 		// Check if this is a main branch artifact
