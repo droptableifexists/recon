@@ -2,6 +2,8 @@ package main
 
 import (
 	"archive/zip"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -329,7 +331,7 @@ func diffQueries(current []byte, baseline string) []Query {
 	baselineMap := make(map[string]bool)
 	for _, q := range baselineQueries {
 		// Use the actual string value as the key, not a pointer
-		queryString := normalizeQuery(q.Query)
+		queryString := hashQuery(q.Query)
 		baselineMap[queryString] = true
 	}
 
@@ -340,7 +342,7 @@ func diffQueries(current []byte, baseline string) []Query {
 	var matchedCount int
 	for _, q := range currentQueries {
 		// Use the actual string value for lookup, not a pointer
-		queryString := normalizeQuery(q.Query)
+		queryString := hashQuery(q.Query)
 		if !baselineMap[queryString] {
 			newQueries = append(newQueries, q)
 			// Show first few unmatched queries
@@ -364,4 +366,10 @@ var whitespace = regexp.MustCompile(`\s+`)
 
 func normalizeQuery(query string) string {
 	return strings.TrimSpace(whitespace.ReplaceAllString(query, " "))
+}
+
+func hashQuery(query string) string {
+	normalized := normalizeQuery(query)
+	h := sha256.Sum256([]byte(normalized))
+	return hex.EncodeToString(h[:])
 }
