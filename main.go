@@ -327,7 +327,9 @@ func diffQueries(current, baseline string) []Query {
 	// Create a map of baseline queries for quick lookup
 	baselineMap := make(map[string]bool)
 	for _, q := range baselineQueries {
-		baselineMap[q.Query] = true
+		// Use the actual string value as the key, not a pointer
+		queryString := q.Query
+		baselineMap[queryString] = true
 	}
 
 	fmt.Fprintf(os.Stderr, "Debug: Baseline map size: %d\n", len(baselineMap))
@@ -335,7 +337,9 @@ func diffQueries(current, baseline string) []Query {
 	// Find new queries
 	var newQueries []Query
 	for _, q := range currentQueries {
-		if !baselineMap[q.Query] {
+		// Use the actual string value for lookup, not a pointer
+		queryString := q.Query
+		if !baselineMap[queryString] {
 			newQueries = append(newQueries, q)
 		}
 	}
