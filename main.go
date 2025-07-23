@@ -2,15 +2,12 @@ package main
 
 import (
 	"archive/zip"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -319,57 +316,24 @@ func getArtifactFromMain(name string) string {
 }
 
 func diffQueries(current []byte, baseline string) []Query {
-	var currentQueries, baselineQueries []Query
+	currentQueries := []Query{}
 	json.Unmarshal(current, &currentQueries)
+
+	baselineQueries := []Query{}
 	json.Unmarshal([]byte(baseline), &baselineQueries)
 
-	fmt.Fprintf(os.Stderr, "Debug: Current queries count: %d\n", len(currentQueries))
-	fmt.Fprintf(os.Stderr, "Debug: Baseline queries count: %d\n", len(baselineQueries))
-	fmt.Fprintf(os.Stderr, "Debug: Baseline string length: %d\n", len(baseline))
+	fmt.Println("Current queries:")
+	fmt.Println(currentQueries[0].Query)
+	fmt.Println(currentQueries[1].Query)
+	fmt.Println(currentQueries[2].Query)
+	fmt.Println("Baseline queries:")
+	fmt.Println(baselineQueries[0].Query)
+	fmt.Println(baselineQueries[1].Query)
+	fmt.Println(baselineQueries[2].Query)
+	fmt.Println("Equality check:")
+	fmt.Println(currentQueries[0].Query == baselineQueries[0].Query)
+	fmt.Println(currentQueries[1].Query == baselineQueries[1].Query)
+	fmt.Println(currentQueries[2].Query == baselineQueries[2].Query)
 
-	// Create a map of baseline queries for quick lookup
-	baselineMap := make(map[string]bool)
-	for _, q := range baselineQueries {
-		// Use the actual string value as the key, not a pointer
-		queryString := hashQuery(q.Query)
-		baselineMap[queryString] = true
-	}
-
-	fmt.Fprintf(os.Stderr, "Debug: Baseline map size: %d\n", len(baselineMap))
-
-	// Find new queries
-	var newQueries []Query
-	var matchedCount int
-	for _, q := range currentQueries {
-		// Use the actual string value for lookup, not a pointer
-		queryString := hashQuery(q.Query)
-		if !baselineMap[queryString] {
-			newQueries = append(newQueries, q)
-			// Show first few unmatched queries
-			if len(newQueries) <= 3 {
-				fmt.Fprintf(os.Stderr, "Debug: Unmatched query: '%s'\n", queryString)
-			}
-		} else {
-			matchedCount++
-			// Show first few matched queries
-			if matchedCount <= 3 {
-				fmt.Fprintf(os.Stderr, "Debug: Matched query: '%s'\n", queryString)
-			}
-		}
-	}
-
-	fmt.Fprintf(os.Stderr, "Debug: Matched queries: %d, Unmatched queries: %d\n", matchedCount, len(newQueries))
-	return newQueries
-}
-
-var whitespace = regexp.MustCompile(`\s+`)
-
-func normalizeQuery(query string) string {
-	return strings.TrimSpace(whitespace.ReplaceAllString(query, " "))
-}
-
-func hashQuery(query string) string {
-	normalized := normalizeQuery(query)
-	h := sha256.Sum256([]byte(normalized))
-	return hex.EncodeToString(h[:])
+	return []Query{}
 }
