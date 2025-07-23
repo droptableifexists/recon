@@ -336,14 +336,25 @@ func diffQueries(current, baseline string) []Query {
 
 	// Find new queries
 	var newQueries []Query
+	var matchedCount int
 	for _, q := range currentQueries {
 		// Use the actual string value for lookup, not a pointer
 		queryString := q.Query
 		if !baselineMap[queryString] {
 			newQueries = append(newQueries, q)
+			// Show first few unmatched queries
+			if len(newQueries) <= 3 {
+				fmt.Fprintf(os.Stderr, "Debug: Unmatched query: '%s'\n", queryString)
+			}
+		} else {
+			matchedCount++
+			// Show first few matched queries
+			if matchedCount <= 3 {
+				fmt.Fprintf(os.Stderr, "Debug: Matched query: '%s'\n", queryString)
+			}
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "Debug: New queries count: %d\n", len(newQueries))
+	fmt.Fprintf(os.Stderr, "Debug: Matched queries: %d, Unmatched queries: %d\n", matchedCount, len(newQueries))
 	return newQueries
 }
