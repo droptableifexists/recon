@@ -73,7 +73,7 @@ func main() {
 	queriesBaseline := getArtifactFromMain(fmt.Sprintf("sql-queries-%s", testSuiteName))
 
 	// Generate JSON diff
-	queryDiff := diffQueries(string(body), queriesBaseline)
+	queryDiff := diffQueries(body, queriesBaseline)
 
 	// Just use the new queries without plans
 	queryDiffJSON, err := json.Marshal(queryDiff)
@@ -315,9 +315,9 @@ func getArtifactFromMain(name string) string {
 	return ""
 }
 
-func diffQueries(current, baseline string) []Query {
+func diffQueries(current []byte, baseline string) []Query {
 	var currentQueries, baselineQueries []Query
-	json.Unmarshal([]byte(current), &currentQueries)
+	json.Unmarshal(current, &currentQueries)
 	json.Unmarshal([]byte(baseline), &baselineQueries)
 
 	fmt.Fprintf(os.Stderr, "Debug: Current queries count: %d\n", len(currentQueries))
