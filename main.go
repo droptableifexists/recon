@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -328,7 +329,7 @@ func diffQueries(current []byte, baseline string) []Query {
 	baselineMap := make(map[string]bool)
 	for _, q := range baselineQueries {
 		// Use the actual string value as the key, not a pointer
-		queryString := q.Query
+		queryString := normalizeQuery(q.Query)
 		baselineMap[queryString] = true
 	}
 
@@ -339,7 +340,7 @@ func diffQueries(current []byte, baseline string) []Query {
 	var matchedCount int
 	for _, q := range currentQueries {
 		// Use the actual string value for lookup, not a pointer
-		queryString := q.Query
+		queryString := normalizeQuery(q.Query)
 		if !baselineMap[queryString] {
 			newQueries = append(newQueries, q)
 			// Show first few unmatched queries
@@ -357,4 +358,10 @@ func diffQueries(current []byte, baseline string) []Query {
 
 	fmt.Fprintf(os.Stderr, "Debug: Matched queries: %d, Unmatched queries: %d\n", matchedCount, len(newQueries))
 	return newQueries
+}
+
+var whitespace = regexp.MustCompile(`\s+`)
+
+func normalizeQuery(query string) string {
+	return strings.TrimSpace(whitespace.ReplaceAllString(query, " "))
 }
