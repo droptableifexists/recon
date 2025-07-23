@@ -322,18 +322,14 @@ func diffQueries(current []byte, baseline string) []Query {
 	baselineQueries := []Query{}
 	json.Unmarshal([]byte(baseline), &baselineQueries)
 
-	fmt.Println("Current queries:")
-	fmt.Println(currentQueries[0].Query)
-	fmt.Println(currentQueries[1].Query)
-	fmt.Println(currentQueries[2].Query)
-	fmt.Println("Baseline queries:")
-	fmt.Println(baselineQueries[0].Query)
-	fmt.Println(baselineQueries[1].Query)
-	fmt.Println(baselineQueries[2].Query)
-	fmt.Println("Equality check:")
-	fmt.Println(currentQueries[0].Query == baselineQueries[0].Query)
-	fmt.Println(currentQueries[1].Query == baselineQueries[1].Query)
-	fmt.Println(currentQueries[2].Query == baselineQueries[2].Query)
+	for _, q := range currentQueries {
+		//find a match in baselineQueries
+		for _, bq := range baselineQueries {
+			if q.Query == bq.Query {
+				fmt.Println("Match found:", q.Query)
+			}
+		}
+	}
 
 	return []Query{}
 }
