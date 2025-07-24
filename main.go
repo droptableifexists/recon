@@ -322,14 +322,22 @@ func diffQueries(current []byte, baseline string) []Query {
 	baselineQueries := []Query{}
 	json.Unmarshal([]byte(baseline), &baselineQueries)
 
+	// Create a hashmap of baseline queries for O(1) lookup
+	baselineMap := make(map[string]bool)
+	for _, q := range baselineQueries {
+		baselineMap[q.Query] = true
+	}
+
+	// Find new queries by checking if they exist in baseline
+	var newQueries []Query
 	for _, q := range currentQueries {
-		//find a match in baselineQueries
-		for _, bq := range baselineQueries {
-			if q.Query == bq.Query {
-				fmt.Println("Match found:", q.Query)
-			}
+		if !baselineMap[q.Query] {
+			newQueries = append(newQueries, q)
 		}
 	}
 
-	return []Query{}
+	fmt.Fprintf(os.Stderr, "Debug: Current queries: %d, Baseline queries: %d, New queries: %d\n",
+		len(currentQueries), len(baselineQueries), len(newQueries))
+
+	return newQueries
 }

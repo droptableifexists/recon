@@ -810,6 +810,11 @@ func listenAndProxyDataWithContext(ctx context.Context, src net.Conn, dst net.Co
 						connState.PreparedStatements[statementName] = stmt
 						connState.LastParseMessage = stmt // Store for use with empty statement names
 						connState.mu.Unlock()
+
+						// Store the query structure immediately when we receive the Parse message
+						qs.AddQuery(store.QueryExecuted{
+							Query: cleanedQuery,
+						})
 					}
 				}
 			case BindMessage:
@@ -837,10 +842,7 @@ func listenAndProxyDataWithContext(ctx context.Context, src net.Conn, dst net.Co
 
 						if exists {
 							stmt.Params = params
-							formattedQuery := formatParameterizedQuery(stmt.Query, params)
-							qs.AddQuery(store.QueryExecuted{
-								Query: formattedQuery,
-							})
+							// Query structure was already stored in Parse message, no need to store again
 						}
 					}
 				}
