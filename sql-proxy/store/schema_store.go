@@ -8,11 +8,13 @@ import (
 
 type SchemaStore struct {
 	fullSchema         []DatabaseSchema
+	schemaDumpStarted  bool
 	schemaDumpFinished bool
 }
 
 func MakeSchemaStore() *SchemaStore {
 	return &SchemaStore{
+		schemaDumpStarted:  false,
 		schemaDumpFinished: false,
 	}
 }
@@ -20,8 +22,11 @@ func MakeSchemaStore() *SchemaStore {
 func (ss *SchemaStore) StartSchemaDump() {
 	// Get env variable to connection string for full schema dump
 	connectionString := os.Getenv("DB_CONNECTION_STRING")
-	ss.fullSchema = getDatabaseSchema(connectionString)
-	ss.schemaDumpFinished = true
+	if !ss.schemaDumpStarted {
+		ss.schemaDumpStarted = true
+		ss.fullSchema = getDatabaseSchema(connectionString)
+		ss.schemaDumpFinished = true
+	}
 }
 
 func (ss *SchemaStore) ListFullSchema() (bool, []DatabaseSchema) {
