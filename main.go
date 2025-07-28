@@ -125,7 +125,7 @@ func main() {
 	var schemaErr error
 
 	// Retry logic for schema endpoint
-	maxRetries := 5
+	maxRetries := 10
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		fmt.Printf("Calling schema API (attempt %d/%d)...\n", attempt, maxRetries)
 		schemaResp, schemaErr = http.Get("http://" + apiAddress + "/schema")
@@ -134,7 +134,7 @@ func main() {
 			if attempt == maxRetries {
 				os.Exit(1)
 			}
-			time.Sleep(2 * time.Second)
+			time.Sleep(30 * time.Second)
 			continue
 		}
 
