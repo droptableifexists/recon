@@ -56,14 +56,18 @@ func (api QueriesExecutedAPI) RunApi() {
 		encoder.SetEscapeHTML(false)
 
 		finished, schema, errors := api.schemaStore.ListFullSchema()
-
 		if len(errors) > 0 {
-			w.Header().Set("Content-Type", "application/json")
+			// Convert errors to strings for JSON serialization
+			errorMessages := make([]string, len(errors))
+			for i, err := range errors {
+				errorMessages[i] = err.Error()
+			}
+
 			w.WriteHeader(http.StatusInternalServerError)
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			encoder.Encode(map[string]interface{}{
 				"status":  "error",
 				"message": "Failed to fetch schema",
-				"errors":  errors,
+				"errors":  errorMessages,
 			})
 			return
 		}
