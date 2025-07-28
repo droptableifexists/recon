@@ -1,12 +1,35 @@
-package main
+package store
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"os"
-	"reflect"
 )
+
+type SchemaStore struct {
+	fullSchema         []DatabaseSchema
+	schemaDumpFinished bool
+}
+
+func MakeSchemaStore() *SchemaStore {
+	return &SchemaStore{
+		schemaDumpFinished: false,
+	}
+}
+
+func (ss *SchemaStore) StartSchemaDump() {
+	// Get env variable to connection string for full schema dump
+	connectionString := os.Getenv("DB_CONNECTION_STRING")
+	ss.fullSchema = getDatabaseSchema(connectionString)
+	ss.schemaDumpFinished = true
+}
+
+func (ss *SchemaStore) ListFullSchema() (bool, []DatabaseSchema) {
+	if !ss.schemaDumpFinished {
+		return false, []DatabaseSchema{}
+	}
+	return true, ss.fullSchema
+}
 
 type DatabaseSchema struct {
 	Database string
@@ -44,7 +67,7 @@ type TableChanges struct {
 	New      *TableSchema `json:"new,omitempty"`
 }
 
-func GetDatabaseSchema(connectionString string) []DatabaseSchema {
+func getDatabaseSchema(connectionString string) []DatabaseSchema {
 	db, err := sql.Open("postgres", connectionString)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to open database: %v\n", err)
@@ -207,51 +230,4 @@ func getConstraints(db *sql.DB, schema string, table string) ([]ConstraintSchema
 		})
 	}
 	return constraints, nil
-}
-
-func CompareSchema(current, baseline []DatabaseSchema) []TableChanges {
-	var tableChanges []TableChanges
-	currentDB := getDatabaseSchemaMap(current)
-	baselineDB := getDatabaseSchemaMap(baseline)
-
-	for _, currentDB := range currentDB {
-		if baselineDB, exists := baselineDB[currentDB.Database]; !exists {
-			continue
-		} else {
-			for _, currentTable := range currentDB.Tables {
-				if baselineTable, exists := baselineDB.Tables[currentTable.Name]; !exists {
-					continue
-				} else {
-					if reflect.DeepEqual(currentTable, baselineTable) {
-						continue
-					} else {
-						jsonCurrent, _ := json.Marshal(currentTable)
-						jsonBaseline, _ := json.Marshal(baselineTable)
-						fmt.Print("\n currentTable: \n")
-						fmt.Print(string(jsonCurrent))
-						fmt.Print("\n baselineTable: \n")
-						fmt.Print(string(jsonBaseline))
-						oldTable := baselineTable
-						newTable := currentTable
-						tableChanges = append(tableChanges, TableChanges{
-							Database: currentDB.Database,
-							Schema:   currentTable.Schema,
-							Table:    currentTable.Name,
-							Old:      &oldTable,
-							New:      &newTable,
-						})
-					}
-				}
-			}
-		}
-	}
-	return tableChanges
-}
-
-func getDatabaseSchemaMap(databases []DatabaseSchema) map[string]DatabaseSchema {
-	databaseSchemaMap := map[string]DatabaseSchema{}
-	for _, database := range databases {
-		databaseSchemaMap[database.Database] = database
-	}
-	return databaseSchemaMap
 }

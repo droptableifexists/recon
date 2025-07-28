@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -48,6 +49,42 @@ type ConstraintDiff struct {
 	Columns []string `json:"columns,omitempty"`
 }
 
+type DatabaseSchema struct {
+	Database string
+	Tables   map[string]TableSchema
+}
+
+type TableSchema struct {
+	Name        string
+	Schema      string
+	Columns     []ColumnSchema
+	Indexes     []IndexSchema
+	Constraints []ConstraintSchema
+}
+
+type ColumnSchema struct {
+	Name     string
+	Type     string
+	Nullable bool
+	Default  string
+}
+
+type IndexSchema struct {
+	Definition string
+}
+
+type ConstraintSchema struct {
+	Definition string
+}
+
+type TableChanges struct {
+	Database string       `json:"database"`
+	Schema   string       `json:"schema"`
+	Table    string       `json:"table"`
+	Old      *TableSchema `json:"old,omitempty"`
+	New      *TableSchema `json:"new,omitempty"`
+}
+
 func main() {
 	// Call the proxy's API
 	apiAddress := os.Getenv("SQL_PROXY_API_ADDRESS")
@@ -83,7 +120,67 @@ func main() {
 	}
 
 	// Generate schema SQL
-	databaseSchema := GetDatabaseSchema(os.Getenv("DB_CONNECTION_STRING"))
+	var schemaResp *http.Response
+	var schemaBody []byte
+	var schemaErr error
+
+	// Retry logic for schema endpoint
+	maxRetries := 5
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		fmt.Printf("Calling schema API (attempt %d/%d)...\n", attempt, maxRetries)
+		schemaResp, schemaErr = http.Get("http://" + apiAddress + "/schema")
+		if schemaErr != nil {
+			fmt.Fprintf(os.Stderr, "Failed to call schema API: %v\n", schemaErr)
+			if attempt == maxRetries {
+				os.Exit(1)
+			}
+			time.Sleep(2 * time.Second)
+			continue
+		}
+
+		if schemaResp.StatusCode == http.StatusServiceUnavailable {
+			fmt.Printf("Schema dump not finished, retrying in 10 seconds...\n")
+			schemaResp.Body.Close()
+			if attempt == maxRetries {
+				fmt.Fprintf(os.Stderr, "Schema dump failed to complete after %d attempts\n", maxRetries)
+				os.Exit(1)
+			}
+			time.Sleep(10 * time.Second)
+			continue
+		}
+
+		if schemaResp.StatusCode != http.StatusOK {
+			fmt.Fprintf(os.Stderr, "Schema API returned status %d\n", schemaResp.StatusCode)
+			schemaResp.Body.Close()
+			if attempt == maxRetries {
+				os.Exit(1)
+			}
+			time.Sleep(2 * time.Second)
+			continue
+		}
+
+		// Success - read the response
+		schemaBody, schemaErr = io.ReadAll(schemaResp.Body)
+		schemaResp.Body.Close()
+		if schemaErr != nil {
+			fmt.Fprintf(os.Stderr, "Failed to read schema response: %v\n", schemaErr)
+			if attempt == maxRetries {
+				os.Exit(1)
+			}
+			time.Sleep(2 * time.Second)
+			continue
+		}
+
+		break // Success, exit retry loop
+	}
+
+	// Parse the schema response
+	var databaseSchema []DatabaseSchema
+	if err := json.Unmarshal(schemaBody, &databaseSchema); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to unmarshal schema response: %v\n", err)
+		os.Exit(1)
+	}
+
 	schemaJSON, err := json.Marshal(databaseSchema)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to marshal database schema: %v\n", err)
@@ -98,7 +195,8 @@ func main() {
 		baselineSchema = []DatabaseSchema{}
 	}
 
-	schemaDiff := CompareSchema(databaseSchema, baselineSchema)
+	schemaDiff := compareSchema(databaseSchema, baselineSchema)
+
 	schemaDiffJSON, err := json.Marshal(schemaDiff)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to marshal schema diff: %v\n", err)
@@ -256,6 +354,13 @@ func getArtifactFromMain(name string) string {
 	latest := candidates[0]
 	fmt.Fprintf(os.Stderr, "Selected artifact: %s (created at: %s)\n", latest.Name, latest.CreatedAt)
 
+	// Log all candidates with their timestamps for verification
+	fmt.Fprintf(os.Stderr, "Debug: All candidates sorted by creation time (newest first):\n")
+	for i, candidate := range candidates {
+		createdTime, _ := time.Parse(time.RFC3339, candidate.CreatedAt)
+		fmt.Fprintf(os.Stderr, "  %d. %s (created at: %s)\n", i+1, candidate.Name, createdTime.Format("2006-01-02 15:04:05"))
+	}
+
 	// Download the ZIP archive of the artifact
 	reqZip, _ := http.NewRequest("GET", latest.ArchiveURL, nil)
 	reqZip.Header.Set("Authorization", "token "+token)
@@ -340,4 +445,100 @@ func diffQueries(current []byte, baseline string) []Query {
 		len(currentQueries), len(baselineQueries), len(newQueries))
 
 	return newQueries
+}
+
+func compareSchema(current, baseline []DatabaseSchema) []TableChanges {
+	var tableChanges []TableChanges
+	currentDBMap := getDatabaseSchemaMap(current)
+	baselineDBMap := getDatabaseSchemaMap(baseline)
+
+	// Compare current databases against baseline
+	for dbName, currentDB := range currentDBMap {
+		baselineDB, exists := baselineDBMap[dbName]
+		if !exists {
+			// Database doesn't exist in baseline - all tables are new
+			for _, currentTable := range currentDB.Tables {
+				tableChanges = append(tableChanges, TableChanges{
+					Database: dbName,
+					Schema:   currentTable.Schema,
+					Table:    currentTable.Name,
+					New:      &currentTable,
+				})
+			}
+			continue
+		}
+
+		// Database exists in baseline - compare tables
+		for tableName, currentTable := range currentDB.Tables {
+			baselineTable, tableExists := baselineDB.Tables[tableName]
+			if !tableExists {
+				// Table doesn't exist in baseline - it's new
+				tableChanges = append(tableChanges, TableChanges{
+					Database: dbName,
+					Schema:   currentTable.Schema,
+					Table:    tableName,
+					New:      &currentTable,
+				})
+				continue
+			}
+
+			// Table exists in both - compare for changes
+			if !reflect.DeepEqual(currentTable, baselineTable) {
+				// Tables are different - log the differences
+				jsonCurrent, _ := json.Marshal(currentTable)
+				jsonBaseline, _ := json.Marshal(baselineTable)
+				fmt.Printf("\nTable changed: %s.%s\n", dbName, tableName)
+				fmt.Printf("Current: %s\n", string(jsonCurrent))
+				fmt.Printf("Baseline: %s\n", string(jsonBaseline))
+
+				tableChanges = append(tableChanges, TableChanges{
+					Database: dbName,
+					Schema:   currentTable.Schema,
+					Table:    tableName,
+					Old:      &baselineTable,
+					New:      &currentTable,
+				})
+			}
+		}
+	}
+
+	// Check for tables that were removed (exist in baseline but not in current)
+	for dbName, baselineDB := range baselineDBMap {
+		currentDB, exists := currentDBMap[dbName]
+		if !exists {
+			// Database was removed - all its tables are removed
+			for _, baselineTable := range baselineDB.Tables {
+				tableChanges = append(tableChanges, TableChanges{
+					Database: dbName,
+					Schema:   baselineTable.Schema,
+					Table:    baselineTable.Name,
+					Old:      &baselineTable,
+				})
+			}
+			continue
+		}
+
+		// Database exists in both - check for removed tables
+		for tableName, baselineTable := range baselineDB.Tables {
+			if _, tableExists := currentDB.Tables[tableName]; !tableExists {
+				// Table exists in baseline but not in current - it was removed
+				tableChanges = append(tableChanges, TableChanges{
+					Database: dbName,
+					Schema:   baselineTable.Schema,
+					Table:    tableName,
+					Old:      &baselineTable,
+				})
+			}
+		}
+	}
+
+	return tableChanges
+}
+
+func getDatabaseSchemaMap(databases []DatabaseSchema) map[string]DatabaseSchema {
+	databaseSchemaMap := map[string]DatabaseSchema{}
+	for _, database := range databases {
+		databaseSchemaMap[database.Database] = database
+	}
+	return databaseSchemaMap
 }

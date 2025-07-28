@@ -71,6 +71,9 @@ jobs:
         run: |
           cd schema_test
           go run .
+      - name: Start Schema Dump
+        run: |
+          curl -X POST http://localhost:8080/schema_dump
 
       - name: Run Tests
         run: |

@@ -159,7 +159,8 @@ func main() {
 	passThroughAddr := ":" + passThroughPort
 
 	qs := store.MakeQueryStore()
-	a := api.MakeQueriesExecutedAPI(qs)
+	ss := store.MakeSchemaStore()
+	a := api.MakeQueriesExecutedAPI(qs, ss)
 	go a.RunApi()
 
 	// Start connection cleanup goroutine

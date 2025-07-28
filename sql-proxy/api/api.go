@@ -11,12 +11,14 @@ import (
 )
 
 type QueriesExecutedAPI struct {
-	queryStore *store.QueryStore
+	queryStore  *store.QueryStore
+	schemaStore *store.SchemaStore
 }
 
-func MakeQueriesExecutedAPI(qs *store.QueryStore) *QueriesExecutedAPI {
+func MakeQueriesExecutedAPI(qs *store.QueryStore, ss *store.SchemaStore) *QueriesExecutedAPI {
 	return &QueriesExecutedAPI{
-		queryStore: qs,
+		queryStore:  qs,
+		schemaStore: ss,
 	}
 }
 
@@ -29,6 +31,38 @@ func (api QueriesExecutedAPI) RunApi() {
 		encoder.SetEscapeHTML(false)
 
 		if err := encoder.Encode(api.queryStore.ListQueries()); err != nil {
+			fmt.Printf("Error encoding JSON: %v\n", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+		}
+	})
+
+	http.HandleFunc("/schema_dump", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		// Use a custom encoder that doesn't escape HTML characters
+		encoder := json.NewEncoder(w)
+		encoder.SetEscapeHTML(false)
+
+		api.schemaStore.StartSchemaDump()
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("Schema dump started"))
+	})
+
+	http.HandleFunc("/schema", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		// Use a custom encoder that doesn't escape HTML characters
+		encoder := json.NewEncoder(w)
+		encoder.SetEscapeHTML(false)
+
+		finished, schema := api.schemaStore.ListFullSchema()
+		if !finished {
+			w.Header().Set("Retry-After", "10")
+			http.Error(w, "Schema dump not finished, retry in 10 seconds", http.StatusServiceUnavailable)
+			return
+		}
+
+		if err := encoder.Encode(schema); err != nil {
 			fmt.Printf("Error encoding JSON: %v\n", err)
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 		}
