@@ -120,13 +120,13 @@ func main() {
 	}
 
 	// Check if schema comparison should be skipped
-	skipSchemaComparison := os.Getenv("SKIP_SCHEMA_COMPARISON") == "true"
+	skipSchemaComparison := os.Getenv("SKIP_SCHEMA_DUMP") == "true"
 
 	var schemaJSON []byte
 	var schemaDiffJSON []byte
 
 	if skipSchemaComparison {
-		fmt.Println("SKIP_SCHEMA_COMPARISON=true, skipping schema comparison and using baseline schema")
+		fmt.Println("SKIP_SCHEMA_DUMP=true, skipping schema comparison and using baseline schema")
 
 		// Get baseline schema from main
 		schemaBaseline := getArtifactFromMain(fmt.Sprintf("full-schema-%s", testSuiteName))
