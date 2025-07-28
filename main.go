@@ -180,6 +180,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Failed to unmarshal schema response: %v\n", err)
 		os.Exit(1)
 	}
+	fmt.Printf("Database schema: %v\n", databaseSchema)
 
 	schemaJSON, err := json.Marshal(databaseSchema)
 	if err != nil {
