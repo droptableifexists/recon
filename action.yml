@@ -1,6 +1,10 @@
 name: "Watch SQL Queries"
 description: "This action watches traffic to the database to record what SQL queries are executed."
 inputs:
+  SKIP_SCHEMA_DUMP:
+    description: "Whether to skip the schema dump"
+    required: false
+    default: "false"
   SQL_PROXY_API_ADDRESS:
     description: "The port on which the sql proxy api is running"
     required: true
@@ -49,6 +53,7 @@ runs:
         GITHUB_REPOSITORY: ${{ inputs.GITHUB_REPOSITORY }}
         GITHUB_TOKEN: ${{ inputs.GITHUB_TOKEN }}
         TEST_SUITE_NAME: ${{ inputs.TEST_SUITE_NAME }}
+        SKIP_SCHEMA_DUMP: ${{ inputs.SKIP_SCHEMA_DUMP }}
       run: |
         chmod +x ./recon/recon
         ./recon/recon
