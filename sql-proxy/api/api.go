@@ -55,7 +55,19 @@ func (api QueriesExecutedAPI) RunApi() {
 		encoder := json.NewEncoder(w)
 		encoder.SetEscapeHTML(false)
 
-		finished, schema := api.schemaStore.ListFullSchema()
+		finished, schema, errors := api.schemaStore.ListFullSchema()
+
+		if len(errors) > 0 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"status":  "error",
+				"message": "Failed to fetch schema",
+				"errors":  errors,
+			})
+			return
+		}
+
 		if !finished {
 			w.Header().Set("Retry-After", "10")
 			http.Error(w, "Schema dump not finished, retry in 10 seconds", http.StatusServiceUnavailable)

@@ -8,6 +8,7 @@ import (
 
 type SchemaStore struct {
 	fullSchema         []DatabaseSchema
+	errors             []error
 	schemaDumpStarted  bool
 	schemaDumpFinished bool
 }
@@ -24,16 +25,19 @@ func (ss *SchemaStore) StartSchemaDump() {
 	connectionString := os.Getenv("DB_CONNECTION_STRING")
 	if !ss.schemaDumpStarted {
 		ss.schemaDumpStarted = true
-		ss.fullSchema = getDatabaseSchema(connectionString)
+		ss.fullSchema, ss.errors = getDatabaseSchema(connectionString)
 		ss.schemaDumpFinished = true
 	}
 }
 
-func (ss *SchemaStore) ListFullSchema() (bool, []DatabaseSchema) {
-	if !ss.schemaDumpFinished {
-		return false, []DatabaseSchema{}
+func (ss *SchemaStore) ListFullSchema() (bool, []DatabaseSchema, []error) {
+	if len(ss.errors) > 0 {
+		return false, []DatabaseSchema{}, ss.errors
 	}
-	return true, ss.fullSchema
+	if !ss.schemaDumpFinished {
+		return false, []DatabaseSchema{}, nil
+	}
+	return true, ss.fullSchema, nil
 }
 
 type DatabaseSchema struct {
@@ -72,18 +76,18 @@ type TableChanges struct {
 	New      *TableSchema `json:"new,omitempty"`
 }
 
-func getDatabaseSchema(connectionString string) []DatabaseSchema {
+func getDatabaseSchema(connectionString string) ([]DatabaseSchema, []error) {
 	db, err := sql.Open("postgres", connectionString)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to open database: %v\n", err)
-		return []DatabaseSchema{}
+		return []DatabaseSchema{}, []error{err}
 	}
 	defer db.Close()
 
 	databases, err := getDatabases(connectionString)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to get databases: %v\n", err)
-		return []DatabaseSchema{}
+		return []DatabaseSchema{}, []error{err}
 	}
 
 	databaseSchemas := []DatabaseSchema{}
@@ -91,34 +95,44 @@ func getDatabaseSchema(connectionString string) []DatabaseSchema {
 		tables, err := getTables(connectionString, database)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to get tables: %v\n", err)
-			return []DatabaseSchema{}
+			return []DatabaseSchema{}, []error{err}
 		}
 		databaseSchemas = append(databaseSchemas, DatabaseSchema{
 			Database: database,
 			Tables:   tables,
 		})
 	}
-	return databaseSchemas
+	return databaseSchemas, nil
 }
 
 func getDatabases(connectionString string) ([]string, error) {
 	defaultDatabase := os.Getenv("DEFAULT_DATABASE")
+	if defaultDatabase == "" {
+		fmt.Fprintf(os.Stderr, "Warning: DEFAULT_DATABASE environment variable not set, using 'postgres'\n")
+		defaultDatabase = "postgres"
+	}
+
 	connectionString = fmt.Sprintf("%s dbname=%s", connectionString, defaultDatabase)
 	db, err := sql.Open("postgres", connectionString)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to connect to database %s: %v", defaultDatabase, err)
 	}
 	defer db.Close()
 
+	// Test the connection
+	if err := db.Ping(); err != nil {
+		return nil, fmt.Errorf("failed to ping database %s: %v", defaultDatabase, err)
+	}
+
 	if rows, err := db.Query("SELECT datname FROM pg_database WHERE datistemplate = false"); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to query databases: %v", err)
 	} else {
 		defer rows.Close()
 		databases := []string{}
 		for rows.Next() {
 			var name string
 			if err := rows.Scan(&name); err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to scan database name: %v", err)
 			}
 			databases = append(databases, name)
 		}
