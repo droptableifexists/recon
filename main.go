@@ -119,91 +119,110 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Generate schema SQL
-	var schemaResp *http.Response
-	var schemaBody []byte
-	var schemaErr error
+	// Check if schema comparison should be skipped
+	skipSchemaComparison := os.Getenv("SKIP_SCHEMA_COMPARISON") == "true"
 
-	// Retry logic for schema endpoint
-	maxRetries := 10
-	for attempt := 1; attempt <= maxRetries; attempt++ {
-		fmt.Printf("Calling schema API (attempt %d/%d)...\n", attempt, maxRetries)
-		schemaResp, schemaErr = http.Get("http://" + apiAddress + "/schema")
-		if schemaErr != nil {
-			fmt.Fprintf(os.Stderr, "Failed to call schema API: %v\n", schemaErr)
-			if attempt == maxRetries {
-				os.Exit(1)
+	var schemaJSON []byte
+	var schemaDiffJSON []byte
+
+	if skipSchemaComparison {
+		fmt.Println("SKIP_SCHEMA_COMPARISON=true, skipping schema comparison and using baseline schema")
+
+		// Get baseline schema from main
+		schemaBaseline := getArtifactFromMain(fmt.Sprintf("full-schema-%s", testSuiteName))
+
+		// Use baseline schema as current schema
+		schemaJSON = []byte(schemaBaseline)
+
+		// Create empty schema diff (no changes)
+		schemaDiffJSON = []byte("[]")
+	} else {
+		// Generate schema SQL
+		var schemaResp *http.Response
+		var schemaBody []byte
+		var schemaErr error
+
+		// Retry logic for schema endpoint
+		maxRetries := 10
+		for attempt := 1; attempt <= maxRetries; attempt++ {
+			fmt.Printf("Calling schema API (attempt %d/%d)...\n", attempt, maxRetries)
+			schemaResp, schemaErr = http.Get("http://" + apiAddress + "/schema")
+			if schemaErr != nil {
+				fmt.Fprintf(os.Stderr, "Failed to call schema API: %v\n", schemaErr)
+				if attempt == maxRetries {
+					os.Exit(1)
+				}
+				time.Sleep(30 * time.Second)
+				continue
 			}
-			time.Sleep(30 * time.Second)
-			continue
-		}
 
-		if schemaResp.StatusCode == http.StatusServiceUnavailable {
-			fmt.Printf("Schema dump not finished, retrying in 30 seconds...\n")
+			if schemaResp.StatusCode == http.StatusServiceUnavailable {
+				fmt.Printf("Schema dump not finished, retrying in 30 seconds...\n")
+				schemaResp.Body.Close()
+				if attempt == maxRetries {
+					fmt.Fprintf(os.Stderr, "Schema dump failed to complete after %d attempts\n", maxRetries)
+					os.Exit(1)
+				}
+				time.Sleep(30 * time.Second)
+				continue
+			}
+
+			if schemaResp.StatusCode != http.StatusOK {
+				fmt.Fprintf(os.Stderr, "Schema API returned status %d\n", schemaResp.StatusCode)
+				body, _ := io.ReadAll(schemaResp.Body)
+				fmt.Fprintf(os.Stderr, "Schema API response body: %s\n", string(body))
+				schemaResp.Body.Close()
+				if attempt == maxRetries {
+					os.Exit(1)
+				}
+				time.Sleep(2 * time.Second)
+				continue
+			}
+
+			// Success - read the response
+			schemaBody, schemaErr = io.ReadAll(schemaResp.Body)
 			schemaResp.Body.Close()
-			if attempt == maxRetries {
-				fmt.Fprintf(os.Stderr, "Schema dump failed to complete after %d attempts\n", maxRetries)
-				os.Exit(1)
+			if schemaErr != nil {
+				fmt.Fprintf(os.Stderr, "Failed to read schema response: %v\n", schemaErr)
+				if attempt == maxRetries {
+					os.Exit(1)
+				}
+				time.Sleep(2 * time.Second)
+				continue
 			}
-			time.Sleep(30 * time.Second)
-			continue
+
+			break // Success, exit retry loop
 		}
 
-		if schemaResp.StatusCode != http.StatusOK {
-			fmt.Fprintf(os.Stderr, "Schema API returned status %d\n", schemaResp.StatusCode)
-			body, _ := io.ReadAll(schemaResp.Body)
-			fmt.Fprintf(os.Stderr, "Schema API response body: %s\n", string(body))
-			schemaResp.Body.Close()
-			if attempt == maxRetries {
-				os.Exit(1)
-			}
-			time.Sleep(2 * time.Second)
-			continue
+		// Parse the schema response
+		var databaseSchema []DatabaseSchema
+		if err := json.Unmarshal(schemaBody, &databaseSchema); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to unmarshal schema response: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Database schema: %v\n", databaseSchema)
+
+		schemaJSON, err = json.Marshal(databaseSchema)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to marshal database schema: %v\n", err)
+			os.Exit(1)
 		}
 
-		// Success - read the response
-		schemaBody, schemaErr = io.ReadAll(schemaResp.Body)
-		schemaResp.Body.Close()
-		if schemaErr != nil {
-			fmt.Fprintf(os.Stderr, "Failed to read schema response: %v\n", schemaErr)
-			if attempt == maxRetries {
-				os.Exit(1)
-			}
-			time.Sleep(2 * time.Second)
-			continue
+		schemaBaseline := getArtifactFromMain(fmt.Sprintf("full-schema-%s", testSuiteName))
+
+		// Parse the baseline schema from JSON string
+		var baselineSchema []DatabaseSchema
+		if err := json.Unmarshal([]byte(schemaBaseline), &baselineSchema); err != nil {
+			baselineSchema = []DatabaseSchema{}
 		}
 
-		break // Success, exit retry loop
-	}
+		schemaDiff := compareSchema(databaseSchema, baselineSchema)
 
-	// Parse the schema response
-	var databaseSchema []DatabaseSchema
-	if err := json.Unmarshal(schemaBody, &databaseSchema); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to unmarshal schema response: %v\n", err)
-		os.Exit(1)
-	}
-	fmt.Printf("Database schema: %v\n", databaseSchema)
-
-	schemaJSON, err := json.Marshal(databaseSchema)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to marshal database schema: %v\n", err)
-		os.Exit(1)
-	}
-
-	schemaBaseline := getArtifactFromMain(fmt.Sprintf("full-schema-%s", testSuiteName))
-
-	// Parse the baseline schema from JSON string
-	var baselineSchema []DatabaseSchema
-	if err := json.Unmarshal([]byte(schemaBaseline), &baselineSchema); err != nil {
-		baselineSchema = []DatabaseSchema{}
-	}
-
-	schemaDiff := compareSchema(databaseSchema, baselineSchema)
-
-	schemaDiffJSON, err := json.Marshal(schemaDiff)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to marshal schema diff: %v\n", err)
-		os.Exit(1)
+		schemaDiffJSON, err = json.Marshal(schemaDiff)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to marshal schema diff: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	// Create individual JSON files in the root directory
