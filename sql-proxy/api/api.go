@@ -43,7 +43,7 @@ func (api QueriesExecutedAPI) RunApi() {
 		encoder := json.NewEncoder(w)
 		encoder.SetEscapeHTML(false)
 
-		api.schemaStore.StartSchemaDump()
+		go api.schemaStore.StartSchemaDump()
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("Schema dump started"))
 	})
