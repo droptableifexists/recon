@@ -151,6 +151,8 @@ func main() {
 
 		if schemaResp.StatusCode != http.StatusOK {
 			fmt.Fprintf(os.Stderr, "Schema API returned status %d\n", schemaResp.StatusCode)
+			body, _ := io.ReadAll(schemaResp.Body)
+			fmt.Fprintf(os.Stderr, "Schema API response body: %s\n", string(body))
 			schemaResp.Body.Close()
 			if attempt == maxRetries {
 				os.Exit(1)
