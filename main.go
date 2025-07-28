@@ -139,13 +139,13 @@ func main() {
 		}
 
 		if schemaResp.StatusCode == http.StatusServiceUnavailable {
-			fmt.Printf("Schema dump not finished, retrying in 10 seconds...\n")
+			fmt.Printf("Schema dump not finished, retrying in 30 seconds...\n")
 			schemaResp.Body.Close()
 			if attempt == maxRetries {
 				fmt.Fprintf(os.Stderr, "Schema dump failed to complete after %d attempts\n", maxRetries)
 				os.Exit(1)
 			}
-			time.Sleep(10 * time.Second)
+			time.Sleep(30 * time.Second)
 			continue
 		}
 
