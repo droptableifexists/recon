@@ -64,8 +64,8 @@
   <!-- Bottom right: Baseline artifacts -->
   <rect x="720" y="260" width="200" height="150" rx="12" class="panel"/>
   <text x="740" y="286" class="title">Baseline (main)</text>
-  <text x="740" y="312" class="mono">sql-queries-<TEST_SUITE></text>
-  <text x="740" y="332" class="mono">full-schema-<TEST_SUITE></text>
+  <text x="740" y="312" class="mono">sql-queries-&lt;TEST_SUITE&gt;</text>
+  <text x="740" y="332" class="mono">full-schema-&lt;TEST_SUITE&gt;</text>
   <text x="740" y="352" class="text">GitHub Actions artifacts</text>
 
   <!-- Outputs -->
