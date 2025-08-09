@@ -249,3 +249,5 @@ jobs:
 ---
 
 If you have feedback or feature requests, please open an issue or PR.
+
+[!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/droptableifexists)
