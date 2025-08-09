@@ -95,6 +95,21 @@ jobs:
         with:
           go-version: stable
 
+      - name: Run database migrations (example)
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5433/postgres?sslmode=disable
+        run: |
+          # Option A: Apply raw SQL migrations via psql
+          # psql "$DATABASE_URL" -f path/to/migrations.sql
+          
+          # Option B: Use goose (Go migrations)
+          # go install github.com/pressly/goose/v3/cmd/goose@latest
+          # goose -dir migrations postgres "$DATABASE_URL" up
+
+      - name: Trigger schema dump
+        run: |
+          curl -sS -X POST http://localhost:8080/schema_dump
+
       - name: Run tests against proxy
         env:
           # Your app connects to the DB via the proxy on 5433
