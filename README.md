@@ -43,7 +43,7 @@ Track SQL executed by tests via a lightweight PostgreSQL wire-protocol proxy, an
 - `DEFAULT_DATABASE` (optional, default: `postgres`): Database used to enumerate databases.
 
 Notes:
-- The proxy automatically kicks off a schema dump when the API starts. If `DB_CONNECTION_STRING` is missing or cannot connect, the API returns a detailed error.
+- The proxy does not automatically start a schema dump. Trigger it by POSTing to `/schema_dump` after your migrations complete.
 
 ### CLI (diff tool in this repo) environment variables
 - `SQL_PROXY_API_ADDRESS` (required): Address of the proxy API, e.g. `localhost:8080` (if ports are published) or `proxy:8080` (service name in Actions network).
