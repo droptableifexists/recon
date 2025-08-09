@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="960" height="520" viewBox="0 0 960 520" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title>How recon works</title>
+  <desc>Tests send SQL to proxy, proxy forwards to Postgres and exposes API. CLI reads API and baseline artifacts from main to produce diffs.</desc>
+  <defs>
+    <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f6f9fc"/>
+      <stop offset="100%" stop-color="#eef3f8"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#36d1dc"/>
+      <stop offset="100%" stop-color="#5b86e5"/>
+    </linearGradient>
+    <style>
+      .panel { fill:url(#panel); stroke:#d6deeb; stroke-width:1.5; }
+      .title { font: 700 14px -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; fill:#0b1220; }
+      .text { font: 500 12px -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; fill:#334155; }
+      .mono { font: 600 12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; fill:#0f172a; }
+      .arrow { stroke:#334155; stroke-width:2.5; fill:none; marker-end:url(#arrowHead); }
+      .accent { stroke:url(#accent); stroke-width:2.5; fill:none; marker-end:url(#arrowHeadAccent); }
+    </style>
+    <marker id="arrowHead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#334155" />
+    </marker>
+    <marker id="arrowHeadAccent" markerWidth="12" markerHeight="12" refX="10" refY="3.5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,7 L10,3.5 z" fill="#5b86e5" />
+    </marker>
+  </defs>
+
+  <!-- Left column: Tests/App -->
+  <rect x="40" y="60" width="220" height="120" rx="12" class="panel"/>
+  <text x="60" y="86" class="title">Tests / App</text>
+  <text x="60" y="112" class="text">Connects to Postgres via proxy</text>
+  <text x="60" y="134" class="mono">DATABASE_URL=...:5433</text>
+
+  <!-- Middle column: Proxy -->
+  <rect x="370" y="40" width="240" height="160" rx="12" class="panel"/>
+  <text x="390" y="66" class="title">sql-proxy</text>
+  <text x="390" y="92" class="text">- Intercepts PostgreSQL wire protocol</text>
+  <text x="390" y="114" class="text">- Captures queries on Parse/Query</text>
+  <text x="390" y="136" class="text">- Exposes HTTP API (queries, schema)</text>
+  <text x="390" y="158" class="text">- Triggers background schema dump</text>
+
+  <!-- Right column: Postgres -->
+  <rect x="740" y="60" width="180" height="120" rx="12" class="panel"/>
+  <text x="760" y="86" class="title">Postgres</text>
+  <text x="760" y="112" class="text">Real database</text>
+  <text x="760" y="134" class="mono">:5432</text>
+
+  <!-- Bottom middle: Proxy API -->
+  <rect x="410" y="240" width="160" height="110" rx="12" class="panel"/>
+  <text x="430" y="266" class="title">Proxy API</text>
+  <text x="430" y="292" class="mono">GET /queries</text>
+  <text x="430" y="312" class="mono">POST /schema_dump</text>
+  <text x="430" y="332" class="mono">GET /schema</text>
+
+  <!-- Bottom left: CLI -->
+  <rect x="60" y="260" width="220" height="150" rx="12" class="panel"/>
+  <text x="80" y="286" class="title">CLI (go run .)</text>
+  <text x="80" y="312" class="text">- Reads queries and schema</text>
+  <text x="80" y="332" class="text">- Fetches baseline artifacts</text>
+  <text x="80" y="352" class="text">- Emits JSON artifacts</text>
+
+  <!-- Bottom right: Baseline artifacts -->
+  <rect x="720" y="260" width="200" height="150" rx="12" class="panel"/>
+  <text x="740" y="286" class="title">Baseline (main)</text>
+  <text x="740" y="312" class="mono">sql-queries-<TEST_SUITE></text>
+  <text x="740" y="332" class="mono">full-schema-<TEST_SUITE></text>
+  <text x="740" y="352" class="text">GitHub Actions artifacts</text>
+
+  <!-- Outputs -->
+  <rect x="360" y="392" width="240" height="92" rx="12" class="panel"/>
+  <text x="380" y="418" class="title">Outputs</text>
+  <text x="380" y="444" class="mono">sql-queries.json</text>
+  <text x="520" y="444" class="mono">queries-diff.json</text>
+  <text x="380" y="464" class="mono">full-schema.json</text>
+  <text x="520" y="464" class="mono">schema-diff.json</text>
+
+  <!-- Arrows: data flow -->
+  <path d="M260,120 C300,120 340,120 370,120" class="arrow"/>
+  <path d="M610,120 C660,120 700,120 740,120" class="arrow"/>
+
+  <!-- Proxy to API (control plane) -->
+  <path d="M490,200 C490,220 490,228 490,240" class="accent"/>
+
+  <!-- CLI to API -->
+  <path d="M280,320 C340,320 370,320 410,320" class="arrow"/>
+
+  <!-- CLI to baseline artifacts -->
+  <path d="M280,338 C500,338 620,338 720,338" class="arrow"/>
+
+  <!-- CLI to Outputs -->
+  <path d="M280,378 C330,390 350,396 360,400" class="arrow"/>
+</svg> 

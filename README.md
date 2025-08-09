@@ -21,6 +21,10 @@ Track SQL executed by tests via a lightweight PostgreSQL wire-protocol proxy, an
 - The API exposes endpoints for queries and schema. The schema endpoint returns `503 Service Unavailable` while the dump is in progress and includes a `Retry-After` header.
 - The CLI calls the API, fetches baseline artifacts from GitHub Actions, and writes JSON files you can upload as artifacts.
 
+<p align="center">
+  <img src="assets/how-it-works.svg" alt="How recon works: Tests/App -> sql-proxy -> Postgres; CLI reads Proxy API and baseline artifacts to produce diffs." width="820" />
+</p>
+
 ## Requirements
 - GitHub Actions or any CI runner that can run service containers
 - Docker images:
