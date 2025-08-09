@@ -1,5 +1,9 @@
 # recon
 
+<p align="center">
+  <img src="assets/recon-logo.svg" alt="recon logo" width="200" />
+</p>
+
 Track SQL executed by tests via a lightweight PostgreSQL wire-protocol proxy, and diff both queries and database schema against a baseline from your main branch.
 
 ## What this does
