@@ -76,11 +76,6 @@
   <text x="380" y="464" class="mono">full-schema.json</text>
   <text x="520" y="464" class="mono">schema-diff.json</text>
 
-  <!-- Bottom left: Migrations -->
-  <rect x="60" y="420" width="220" height="70" rx="12" class="panel"/>
-  <text x="80" y="446" class="title">Migrations</text>
-  <text x="80" y="468" class="text">Run before schema dump</text>
-
   <!-- Arrows: data flow -->
   <path d="M260,120 C300,120 340,120 370,120" class="arrow"/>
   <path d="M610,120 C660,120 700,120 740,120" class="arrow"/>
@@ -96,8 +91,4 @@
 
   <!-- CLI to Outputs -->
   <path d="M280,378 C330,390 350,396 360,400" class="arrow"/>
-
-  <!-- Migrations to API (schema dump trigger) -->
-  <path d="M280,455 C340,455 370,340 410,330" class="accent"/>
-  <text x="305" y="438" class="mono">POST /schema_dump</text>
 </svg> 
