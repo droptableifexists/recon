@@ -17,7 +17,7 @@ Track SQL executed by tests via a lightweight PostgreSQL wire-protocol proxy, an
 
 ## How it works
 - A sidecar proxy (`sql-proxy`) listens on a port (default `5433`) and forwards to your real Postgres (`5432`).
-- When your tests run against the proxy, it logs queries on Parse/Query and starts a background full-schema dump.
+- When your tests run against the proxy, it logs queries on Parse/Query. Trigger a full-schema dump after migrations by POSTing to `/schema_dump`.
 - The API exposes endpoints for queries and schema. The schema endpoint returns `503 Service Unavailable` while the dump is in progress and includes a `Retry-After` header.
 - The CLI calls the API, fetches baseline artifacts from GitHub Actions, and writes JSON files you can upload as artifacts.
 
@@ -64,92 +64,63 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    needs: build-and-push
+    permissions:
+      contents: read
+      actions: read  # Needed for listing artifacts from main
+
     services:
       postgres:
         image: postgres
         env:
           POSTGRES_PASSWORD: postgres
-        ports:
-          - 5432:5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+        ports:
+          - 5432:5432
 
       proxy:
-        image: ghcr.io/droptableifexists/sql-proxy:latest
+        image: ghcr.io/${{ github.repository_owner }}/sql-proxy:latest
         env:
           LISTEN_PORT: 5433
           BACKEND_HOST: postgres
           BACKEND_PORT: 5432
           API_PORT: 8080
           DB_CONNECTION_STRING: host=postgres port=5432 user=postgres password=postgres sslmode=disable
-          DEFAULT_DATABASE: postgres
         ports:
           - 5433:5433
           - 8080:8080
 
     steps:
-      - name: Checkout
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: stable
+      - name: Migrate Database
+        run: |
+          cd schema_test
+          go run .
 
-      - name: Run database migrations (example)
-        env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5433/postgres?sslmode=disable
-        run: ./migrate
-
-      - name: Trigger schema dump
+      - name: Start Schema Dump
         run: |
           curl -sS -X POST http://localhost:8080/schema_dump
 
-      - name: Run tests against proxy
-        env:
-          # Your app connects to the DB via the proxy on 5433
-          DATABASE_URL: postgres://postgres:postgres@localhost:5433/postgres?sslmode=disable
+      - name: Run Tests
         run: |
-          # Replace with your test command(s)
-          go test ./...
-
-      - name: Generate query and schema artifacts
-        env:
-          SQL_PROXY_API_ADDRESS: localhost:8080
-          TEST_SUITE_NAME: default
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Optionally skip live schema and use baseline
-          # SKIP_SCHEMA_DUMP: "true"
-        run: |
+          cd tests
           go run .
 
-      - name: Upload SQL queries
-        uses: actions/upload-artifact@v4
+      - name: Get SQL data
+        uses: ./
+        id: get-sql-data
         with:
-          name: sql-queries
-          path: sql-queries.json
-
-      - name: Upload queries diff
-        uses: actions/upload-artifact@v4
-        with:
-          name: queries-diff
-          path: queries-diff.json
-
-      - name: Upload full schema
-        uses: actions/upload-artifact@v4
-        with:
-          name: full-schema
-          path: full-schema.json
-
-      - name: Upload schema diff
-        uses: actions/upload-artifact@v4
-        with:
-          name: schema-diff
-          path: schema-diff.json
+          SQL_PROXY_API_ADDRESS: localhost:8080
+          DB_CONNECTION_STRING: host=localhost port=5432 user=postgres password=postgres sslmode=disable
+          DEFAULT_DATABASE: postgres
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
 ## Local usage (dev)
@@ -181,7 +152,7 @@ jobs:
 ## API endpoints (proxy)
 - `GET /health`: Health check.
 - `GET /queries`: Returns captured queries (JSON array of `{ "Query": "..." }`).
-- `POST /schema_dump`: Triggers schema dump (the API also auto-starts it on boot).
+- `POST /schema_dump`: Triggers schema dump (call this after migrations).
 - `GET /schema`:
   - `200 OK`: Full schema JSON when ready
   - `503 Service Unavailable`: Dump in progress, includes `Retry-After` header
