@@ -123,6 +123,68 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
+## Sample output
+
+- **sql-queries.json**: All queries captured this run (order not guaranteed)
+```json
+[
+  {"Query": "SELECT 1;"},
+  {"Query": "INSERT INTO users (id, name) VALUES ($1, $2);"},
+  {"Query": "UPDATE accounts SET balance = balance + $1 WHERE id = $2;"}
+]
+```
+
+- **queries-diff.json**: Only queries that are new compared to baseline
+```json
+[
+  {"Query": "ALTER TABLE users ADD COLUMN bio text;"}
+]
+```
+
+- **full-schema.json**: Current full schema (array by database). Example truncated for brevity
+```json
+[
+  {
+    "Database": "postgres",
+    "Tables": {
+      "public.users": {
+        "Name": "users",
+        "Schema": "public",
+        "Columns": [
+          {"Name": "id", "Type": "uuid", "Nullable": false},
+          {"Name": "name", "Type": "text", "Nullable": false}
+        ],
+        "Indexes": [
+          {"Definition": "CREATE UNIQUE INDEX users_pkey ON public.users USING btree (id)"}
+        ],
+        "Constraints": [
+          {"Definition": "PRIMARY KEY (id)"}
+        ]
+      }
+    }
+  }
+]
+```
+
+- **schema-diff.json**: Table-level differences vs baseline. If a table is added, only `New` is present; if removed, only `Old` is present; if changed, both
+```json
+[
+  {
+    "Database": "postgres",
+    "Schema": "public",
+    "Table": "orders",
+    "New": { "Name": "orders", "Schema": "public", "Columns": [ {"Name": "id", "Type": "uuid", "Nullable": false} ] }
+  },
+  {
+    "Database": "postgres",
+    "Schema": "public",
+    "Table": "users",
+    "Old": { "Name": "users", "Schema": "public" },
+    "New": { "Name": "users", "Schema": "public", "Columns": [ {"Name": "bio", "Type": "text", "Nullable": true} ] }
+  }
+]
+```
+
 ## Local usage (dev)
 1. Start Postgres locally (Docker is fine) and export `DB_CONNECTION_STRING` for the proxy.
 2. Run the proxy (ensure ports 5433 and 8080 are free):
