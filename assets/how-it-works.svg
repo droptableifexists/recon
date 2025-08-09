@@ -56,7 +56,7 @@
 
   <!-- Bottom left: CLI -->
   <rect x="60" y="260" width="220" height="150" rx="12" class="panel"/>
-  <text x="80" y="286" class="title">CLI (go run .)</text>
+  <text x="80" y="286" class="title">Get SQL Data</text>
   <text x="80" y="312" class="text">- Reads queries and schema</text>
   <text x="80" y="332" class="text">- Fetches baseline artifacts</text>
   <text x="80" y="352" class="text">- Emits JSON artifacts</text>
