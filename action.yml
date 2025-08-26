@@ -5,6 +5,10 @@ inputs:
     description: "Whether to skip the schema dump"
     required: false
     default: "false"
+  SKIP_UPLOAD:
+    description: "Whether to skip uploading artifacts"
+    required: false
+    default: "false"
   SQL_PROXY_API_ADDRESS:
     description: "The port on which the sql proxy api is running"
     required: true
@@ -59,6 +63,7 @@ runs:
         ./recon/recon
 
     - name: Upload SQL queries
+      if: inputs.SKIP_UPLOAD != 'true'
       uses: actions/upload-artifact@v4
       with:
         name: sql-queries-${{ inputs.TEST_SUITE_NAME }}
@@ -67,6 +72,7 @@ runs:
         overwrite: true
 
     - name: Upload queries diff
+      if: inputs.SKIP_UPLOAD != 'true'
       uses: actions/upload-artifact@v4
       with:
         name: queries-diff-${{ inputs.TEST_SUITE_NAME }}
@@ -75,6 +81,7 @@ runs:
         overwrite: true
 
     - name: Upload full schema
+      if: inputs.SKIP_UPLOAD != 'true'
       uses: actions/upload-artifact@v4
       with:
         name: full-schema-${{ inputs.TEST_SUITE_NAME }}
@@ -83,6 +90,7 @@ runs:
         overwrite: true
 
     - name: Upload schema diff
+      if: inputs.SKIP_UPLOAD != 'true'
       uses: actions/upload-artifact@v4
       with:
         name: schema-diff-${{ inputs.TEST_SUITE_NAME }}
