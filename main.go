@@ -143,7 +143,7 @@ func main() {
 		var schemaErr error
 
 		// Retry logic for schema endpoint
-		maxRetries := 10
+		maxRetries := 25
 		for attempt := 1; attempt <= maxRetries; attempt++ {
 			fmt.Printf("Calling schema API (attempt %d/%d)...\n", attempt, maxRetries)
 			schemaResp, schemaErr = http.Get("http://" + apiAddress + "/schema")
