@@ -515,7 +515,7 @@ func compareSchema(current, baseline []DatabaseSchema) []TableChanges {
 				fmt.Printf("Current: %s\n", string(jsonCurrent))
 				fmt.Printf("Baseline: %s\n", string(jsonBaseline))
 
-				currentTableCopy := currentTable // Create a copy to avoid pointer reuse
+				currentTableCopy := currentTable   // Create a copy to avoid pointer reuse
 				baselineTableCopy := baselineTable // Create a copy to avoid pointer reuse
 				tableChanges = append(tableChanges, TableChanges{
 					Database: dbName,
@@ -534,11 +534,12 @@ func compareSchema(current, baseline []DatabaseSchema) []TableChanges {
 		if !exists {
 			// Database was removed - all its tables are removed
 			for _, baselineTable := range baselineDB.Tables {
+				baselineTableCopy := baselineTable // Create a copy to avoid pointer reuse
 				tableChanges = append(tableChanges, TableChanges{
 					Database: dbName,
 					Schema:   baselineTable.Schema,
 					Table:    baselineTable.Name,
-					Old:      &baselineTable,
+					Old:      &baselineTableCopy,
 				})
 			}
 			continue
@@ -548,11 +549,12 @@ func compareSchema(current, baseline []DatabaseSchema) []TableChanges {
 		for tableName, baselineTable := range baselineDB.Tables {
 			if _, tableExists := currentDB.Tables[tableName]; !tableExists {
 				// Table exists in baseline but not in current - it was removed
+				baselineTableCopy := baselineTable // Create a copy to avoid pointer reuse
 				tableChanges = append(tableChanges, TableChanges{
 					Database: dbName,
 					Schema:   baselineTable.Schema,
 					Table:    tableName,
-					Old:      &baselineTable,
+					Old:      &baselineTableCopy,
 				})
 			}
 		}
