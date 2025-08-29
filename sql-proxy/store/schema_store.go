@@ -176,18 +176,27 @@ func getTables(connectionString string, database string) (map[string]TableSchema
 		}
 		// Use fully qualified table name as the key
 		tableKey := fmt.Sprintf("%s.%s", schema, name)
-		if t, ok := tableSchemas[tableKey]; !ok {
-			tableSchemas[tableKey] = TableSchema{
+		t, ok := tableSchemas[tableKey]
+		if !ok {
+			t = TableSchema{
 				Name:    name,
 				Schema:  schema,
 				Columns: []ColumnSchema{},
 			}
-		} else {
-			t.Columns = append(t.Columns, ColumnSchema{
-				Name:     columnName,
-				Type:     dataType,
-				Nullable: isNullable == "YES",
-			})
+		}
+
+		// Add the column
+		t.Columns = append(t.Columns, ColumnSchema{
+			Name:     columnName,
+			Type:     dataType,
+			Nullable: isNullable == "YES",
+		})
+
+		// Update the map
+		tableSchemas[tableKey] = t
+
+		// Get indexes and constraints (only once)
+		if len(t.Indexes) == 0 {
 			t.Indexes, err = getIndexes(db, schema, name)
 			if err != nil {
 				return nil, err
